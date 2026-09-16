@@ -318,6 +318,16 @@ th {
   line-height: 1.7;
 }
 
+.notice {
+  margin-top: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 14px;
+}
+
 .progress {
   height: 8px;
   width: 100%;

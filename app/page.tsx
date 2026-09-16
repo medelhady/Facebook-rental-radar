@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { commentTemplates, groups, keywords, leads } from "@/lib/demo-data";
+import type { FacebookGroup } from "@/lib/types";
 import {
   createDuplicateHash,
   extractLocation,
@@ -46,6 +47,7 @@ const navItems: Array<{
 
 export default function Home() {
   const [activeView, setActiveView] = useState<View>("dashboard");
+  const [radarGroups, setRadarGroups] = useState<FacebookGroup[]>(groups);
   const [sampleText, setSampleText] = useState(
     "شقة للايجار حي النرجس 3 غرف وصالة السعر 4200 شهري للتواصل 0551112233"
   );
@@ -75,7 +77,7 @@ export default function Home() {
     };
   }, [locationWords, sampleText]);
 
-  const activeGroups = groups.filter((group) => group.status === "active").length;
+  const activeGroups = radarGroups.filter((group) => group.status === "active").length;
   const phoneLeads = leads.filter((lead) => lead.phone).length;
   const readyComments = leads.filter((lead) => lead.status === "comment_ready").length;
   const pageTitle = navItems.find((item) => item.id === activeView)?.label ?? "لوحة التحكم";
@@ -129,7 +131,7 @@ export default function Home() {
         {activeView === "dashboard" && (
           <section className="contentGrid">
             <div>
-              <GroupsPanel />
+              <GroupsPanel groups={radarGroups} setGroups={setRadarGroups} />
               <LeadsPanel />
             </div>
             <div>
@@ -145,7 +147,7 @@ export default function Home() {
           </section>
         )}
 
-        {activeView === "groups" && <GroupsPanel />}
+        {activeView === "groups" && <GroupsPanel groups={radarGroups} setGroups={setRadarGroups} />}
         {activeView === "keywords" && <KeywordsPanel expanded />}
         {activeView === "leads" && <LeadsPanel />}
         {activeView === "comments" && <CommentsPanel expanded />}
@@ -191,23 +193,79 @@ function Stats({
   );
 }
 
-function GroupsPanel() {
+function GroupsPanel({
+  groups,
+  setGroups
+}: {
+  groups: FacebookGroup[];
+  setGroups: React.Dispatch<React.SetStateAction<FacebookGroup[]>>;
+}) {
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [message, setMessage] = useState("");
+
+  function handleAddGroup() {
+    const cleanName = name.trim();
+    const cleanUrl = normalizeFacebookUrl(url);
+
+    if (!cleanName || !cleanUrl) {
+      setMessage("اكتب اسم المجموعة ورابط صحيح يبدأ بـ https://");
+      return;
+    }
+
+    if (!cleanUrl.includes("facebook.com/groups/")) {
+      setMessage("الرابط يجب أن يكون رابط مجموعة فيسبوك.");
+      return;
+    }
+
+    const exists = groups.some((group) => group.url === cleanUrl);
+    if (exists) {
+      setMessage("هذه المجموعة موجودة مسبقاً.");
+      return;
+    }
+
+    setGroups((currentGroups) => [
+      {
+        id: `local-${Date.now()}`,
+        name: cleanName,
+        url: cleanUrl,
+        status: "active",
+        lastCheckedAt: undefined,
+        newPosts: 0
+      },
+      ...currentGroups
+    ]);
+    setName("");
+    setUrl("");
+    setMessage("تمت إضافة المجموعة إلى القائمة. الحفظ الدائم سيكون بعد ربط Supabase.");
+  }
+
   return (
     <Panel title="روابط مجموعات فيسبوك" subtitle="هذه القائمة هي المصادر التي سيقرأ منها الـ Worker كل 6 ساعات.">
       <div className="formGrid">
         <div className="field">
           <label>اسم المجموعة</label>
-          <input placeholder="مثال: عقارات الرياض للايجار" />
+          <input
+            onChange={(event) => setName(event.target.value)}
+            placeholder="مثال: عقارات الرياض للايجار"
+            value={name}
+          />
         </div>
         <div className="field">
           <label>رابط المجموعة</label>
-          <input placeholder="https://www.facebook.com/groups/..." />
+          <input
+            dir="ltr"
+            onChange={(event) => setUrl(event.target.value)}
+            placeholder="https://www.facebook.com/groups/..."
+            value={url}
+          />
         </div>
-        <button className="button" type="button">
+        <button className="button" onClick={handleAddGroup} type="button">
           <Plus size={18} />
           حفظ
         </button>
       </div>
+      {message && <div className="notice">{message}</div>}
       <div className="tableWrap" style={{ marginTop: 18 }}>
         <table>
           <thead>
@@ -445,4 +503,11 @@ function viewSubtitle(view: View) {
     settings: "اختبار الاستخراج وتجهيز إعدادات التشغيل القادمة."
   };
   return subtitles[view];
+}
+
+function normalizeFacebookUrl(value: string) {
+  const trimmed = value.trim().replace(/^\/+/, "");
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  return `https://${trimmed}`;
 }
