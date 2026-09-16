@@ -1,11 +1,34 @@
 create extension if not exists pgcrypto;
 
-create type source_status as enum ('active', 'paused', 'error');
-create type keyword_type as enum ('include', 'exclude', 'location');
-create type lead_status as enum ('new', 'comment_ready', 'contacted', 'duplicate', 'ignored');
-create type scan_status as enum ('started', 'completed', 'failed');
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'source_status') then
+    create type source_status as enum ('active', 'paused', 'error');
+  end if;
+end $$;
 
-create table public.facebook_groups (
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'keyword_type') then
+    create type keyword_type as enum ('include', 'exclude', 'location');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'lead_status') then
+    create type lead_status as enum ('new', 'comment_ready', 'contacted', 'duplicate', 'ignored');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'scan_status') then
+    create type scan_status as enum ('started', 'completed', 'failed');
+  end if;
+end $$;
+
+create table if not exists public.facebook_groups (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   url text not null unique,
@@ -18,7 +41,7 @@ create table public.facebook_groups (
   updated_at timestamptz not null default now()
 );
 
-create table public.keywords (
+create table if not exists public.keywords (
   id uuid primary key default gen_random_uuid(),
   value text not null,
   type keyword_type not null,
@@ -27,7 +50,7 @@ create table public.keywords (
   unique (value, type)
 );
 
-create table public.comment_templates (
+create table if not exists public.comment_templates (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   body text not null,
@@ -35,7 +58,7 @@ create table public.comment_templates (
   created_at timestamptz not null default now()
 );
 
-create table public.facebook_leads (
+create table if not exists public.facebook_leads (
   id uuid primary key default gen_random_uuid(),
   group_id uuid references public.facebook_groups(id) on delete set null,
   post_url text not null unique,
@@ -55,12 +78,12 @@ create table public.facebook_leads (
   raw_payload jsonb not null default '{}'::jsonb
 );
 
-create index facebook_leads_duplicate_hash_idx on public.facebook_leads (duplicate_hash);
-create index facebook_leads_phone_idx on public.facebook_leads (phone);
-create index facebook_leads_status_idx on public.facebook_leads (status);
-create index facebook_leads_first_seen_at_idx on public.facebook_leads (first_seen_at desc);
+create index if not exists facebook_leads_duplicate_hash_idx on public.facebook_leads (duplicate_hash);
+create index if not exists facebook_leads_phone_idx on public.facebook_leads (phone);
+create index if not exists facebook_leads_status_idx on public.facebook_leads (status);
+create index if not exists facebook_leads_first_seen_at_idx on public.facebook_leads (first_seen_at desc);
 
-create table public.scan_runs (
+create table if not exists public.scan_runs (
   id uuid primary key default gen_random_uuid(),
   group_id uuid references public.facebook_groups(id) on delete cascade,
   status scan_status not null default 'started',
@@ -80,35 +103,41 @@ alter table public.comment_templates enable row level security;
 alter table public.facebook_leads enable row level security;
 alter table public.scan_runs enable row level security;
 
+drop policy if exists "authenticated read facebook groups" on public.facebook_groups;
 create policy "authenticated read facebook groups"
   on public.facebook_groups for select
   to authenticated
   using (true);
 
+drop policy if exists "authenticated manage facebook groups" on public.facebook_groups;
 create policy "authenticated manage facebook groups"
   on public.facebook_groups for all
   to authenticated
   using (true)
   with check (true);
 
+drop policy if exists "authenticated manage keywords" on public.keywords;
 create policy "authenticated manage keywords"
   on public.keywords for all
   to authenticated
   using (true)
   with check (true);
 
+drop policy if exists "authenticated manage comment templates" on public.comment_templates;
 create policy "authenticated manage comment templates"
   on public.comment_templates for all
   to authenticated
   using (true)
   with check (true);
 
+drop policy if exists "authenticated manage facebook leads" on public.facebook_leads;
 create policy "authenticated manage facebook leads"
   on public.facebook_leads for all
   to authenticated
   using (true)
   with check (true);
 
+drop policy if exists "authenticated read scan runs" on public.scan_runs;
 create policy "authenticated read scan runs"
   on public.scan_runs for select
   to authenticated
