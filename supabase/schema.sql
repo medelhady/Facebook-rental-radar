@@ -1,0 +1,134 @@
+create extension if not exists pgcrypto;
+
+create type source_status as enum ('active', 'paused', 'error');
+create type keyword_type as enum ('include', 'exclude', 'location');
+create type lead_status as enum ('new', 'comment_ready', 'contacted', 'duplicate', 'ignored');
+create type scan_status as enum ('started', 'completed', 'failed');
+
+create table public.facebook_groups (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  url text not null unique,
+  facebook_group_id text,
+  location text,
+  status source_status not null default 'active',
+  last_checked_at timestamptz,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.keywords (
+  id uuid primary key default gen_random_uuid(),
+  value text not null,
+  type keyword_type not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (value, type)
+);
+
+create table public.comment_templates (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  body text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table public.facebook_leads (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid references public.facebook_groups(id) on delete set null,
+  post_url text not null unique,
+  author_name text not null,
+  author_profile_url text,
+  post_text text not null,
+  phone text,
+  office_name text,
+  price text,
+  location text,
+  confidence int not null default 0 check (confidence >= 0 and confidence <= 100),
+  status lead_status not null default 'new',
+  suggested_comment text,
+  published_at timestamptz,
+  first_seen_at timestamptz not null default now(),
+  duplicate_hash text not null,
+  raw_payload jsonb not null default '{}'::jsonb
+);
+
+create index facebook_leads_duplicate_hash_idx on public.facebook_leads (duplicate_hash);
+create index facebook_leads_phone_idx on public.facebook_leads (phone);
+create index facebook_leads_status_idx on public.facebook_leads (status);
+create index facebook_leads_first_seen_at_idx on public.facebook_leads (first_seen_at desc);
+
+create table public.scan_runs (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid references public.facebook_groups(id) on delete cascade,
+  status scan_status not null default 'started',
+  checked_posts int not null default 0,
+  matched_posts int not null default 0,
+  extracted_phones int not null default 0,
+  duplicates int not null default 0,
+  new_leads int not null default 0,
+  error text,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+
+alter table public.facebook_groups enable row level security;
+alter table public.keywords enable row level security;
+alter table public.comment_templates enable row level security;
+alter table public.facebook_leads enable row level security;
+alter table public.scan_runs enable row level security;
+
+create policy "authenticated read facebook groups"
+  on public.facebook_groups for select
+  to authenticated
+  using (true);
+
+create policy "authenticated manage facebook groups"
+  on public.facebook_groups for all
+  to authenticated
+  using (true)
+  with check (true);
+
+create policy "authenticated manage keywords"
+  on public.keywords for all
+  to authenticated
+  using (true)
+  with check (true);
+
+create policy "authenticated manage comment templates"
+  on public.comment_templates for all
+  to authenticated
+  using (true)
+  with check (true);
+
+create policy "authenticated manage facebook leads"
+  on public.facebook_leads for all
+  to authenticated
+  using (true)
+  with check (true);
+
+create policy "authenticated read scan runs"
+  on public.scan_runs for select
+  to authenticated
+  using (true);
+
+insert into public.keywords (value, type) values
+  ('للايجار', 'include'),
+  ('للإيجار', 'include'),
+  ('شقة', 'include'),
+  ('فيلا', 'include'),
+  ('غرفة', 'include'),
+  ('للبيع', 'exclude'),
+  ('تم التأجير', 'exclude'),
+  ('النرجس', 'location'),
+  ('الياسمين', 'location'),
+  ('السلامة', 'location')
+on conflict do nothing;
+
+insert into public.comment_templates (title, body) values
+  ('طلب تواصل مهذب', 'السلام عليكم، مهتمين بالتفاصيل. فضلا تواصل معنا على الخاص.'),
+  ('طلب تفاصيل العقار', 'السلام عليكم، هل العقار ما زال متاحا؟ ممكن إرسال التفاصيل وطريقة التواصل؟'),
+  ('عميل مناسب', 'السلام عليكم، لدينا طلب مناسب لهذا العقار. فضلا راسلنا بالتفاصيل.')
+on conflict do nothing;
