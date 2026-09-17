@@ -32,8 +32,18 @@ export async function GET() {
   // With a token but no schedule id, the account's schedules are listed so the
   // id can be read off this screen instead of the Apify console.
   let candidates: ScheduleSummary[] = [];
+  let candidatesError: string | null = null;
   if (apify.hasToken && !apify.hasScheduleId) {
-    candidates = await listSchedules().catch(() => []);
+    try {
+      candidates = await listSchedules();
+      if (candidates.length === 0) {
+        candidatesError = "التوكن يعمل، لكن لا توجد أي جدولة في هذا الحساب. أنشئ واحدة في Apify أولاً.";
+      }
+    } catch (listError) {
+      // Swallowing this left the screen looking identical to a deploy that
+      // never happened, with nothing to tell the two apart.
+      candidatesError = listError instanceof Error ? listError.message : "تعذر قراءة الجدولات.";
+    }
   }
 
   return NextResponse.json({
@@ -42,7 +52,8 @@ export async function GET() {
     updatedAt: data?.updated_at ?? null,
     allowed: ALLOWED_INTERVALS,
     apify,
-    candidates
+    candidates,
+    candidatesError
   });
 }
 

@@ -685,6 +685,7 @@ function SchedulePanel({ connected }: { connected: boolean }) {
   const [candidates, setCandidates] = useState<
     Array<{ id: string; name: string; cron: string; target: string; isTask: boolean }>
   >([]);
+  const [candidatesError, setCandidatesError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -701,6 +702,7 @@ function SchedulePanel({ connected }: { connected: boolean }) {
         setCron(payload.cron);
         setApifyProblem(payload.apify?.problem ?? "");
         setCandidates(payload.candidates ?? []);
+        setCandidatesError(payload.candidatesError ?? "");
       } catch {
         /* the notice below already covers a disconnected dashboard */
       }
@@ -735,6 +737,8 @@ function SchedulePanel({ connected }: { connected: boolean }) {
     <Panel title="وقت البحث" subtitle="كل كم ساعة يمر Apify على المجموعات المتابَعة.">
       {!connected && <div className="notice">لا يمكن الحفظ قبل ربط Supabase.</div>}
       {apifyProblem && <div className="notice">{apifyProblem} أضفه في متغيرات البيئة ثم أعد التشغيل.</div>}
+
+      {candidatesError && <div className="notice">{candidatesError}</div>}
 
       {candidates.length > 0 && (
         <div className="commentBox" style={{ display: "block" }}>
