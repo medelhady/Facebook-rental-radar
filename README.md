@@ -64,6 +64,9 @@ Collection runs on the Apify actor `curious_coder/facebook-post-scraper`, driven
 - `PUT /actor-tasks/{id}/input` updates only the keys it sends, so the cookies survive a group
   sync. The key holding the URLs is read back from the task rather than hardcoded, because a
   wrong key name succeeds silently and keeps scraping the old list.
+- The results cap is written to whichever key the saved task already carries
+  (`resultsLimit`, `maxPosts`, …), read back from the task rather than guessed, and
+  the screen prints the key it used. A guessed key writes a property nobody reads.
 - Only the divisors of 24 are offered as intervals. `0 */5 * * *` is not "every 5 hours": it
   fires at 0, 5, 10, 15, 20 and then waits four.
 - The webhook verifies the run against the Apify API before trusting the body, since Apify does

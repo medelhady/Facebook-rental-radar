@@ -3,9 +3,13 @@ import {
   ALLOWED_INTERVALS,
   apifyConfigStatus,
   cronForInterval,
+  getTaskOverview,
   listSchedules,
+  MAX_RESULTS_LIMIT,
+  syncApifyResultsLimit,
   syncApifySchedule,
-  type ScheduleSummary
+  type ScheduleSummary,
+  type TaskOverview
 } from "@/lib/apify";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -46,14 +50,29 @@ export async function GET() {
     }
   }
 
+  // The task is the single source of truth for the cap and the group count,
+  // so it is read live rather than mirrored into Supabase and drifting.
+  let task: TaskOverview | null = null;
+  let taskError: string | null = null;
+  if (apify.hasToken && apify.hasTaskId) {
+    try {
+      task = await getTaskOverview();
+    } catch (readError) {
+      taskError = readError instanceof Error ? readError.message : "تعذر قراءة إعدادات الـ Task.";
+    }
+  }
+
   return NextResponse.json({
     intervalHours,
     cron: cronForInterval(intervalHours),
     updatedAt: data?.updated_at ?? null,
     allowed: ALLOWED_INTERVALS,
+    maxResultsLimit: MAX_RESULTS_LIMIT,
     apify,
     candidates,
-    candidatesError
+    candidatesError,
+    task,
+    taskError
   });
 }
 
@@ -63,38 +82,59 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "قاعدة البيانات غير مربوطة." }, { status: 503 });
   }
 
-  const body = (await request.json().catch(() => null)) as { intervalHours?: number } | null;
-  const intervalHours = Number(body?.intervalHours);
+  const body = (await request.json().catch(() => null)) as
+    | { intervalHours?: number; resultsLimit?: number }
+    | null;
 
-  let cron: string;
-  try {
-    cron = cronForInterval(intervalHours);
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "قيمة غير صالحة." },
-      { status: 400 }
-    );
+  const wantsInterval = body?.intervalHours !== undefined;
+  const wantsLimit = body?.resultsLimit !== undefined;
+  if (!wantsInterval && !wantsLimit) {
+    return NextResponse.json({ error: "لا يوجد شيء لحفظه." }, { status: 400 });
   }
 
-  // Apify goes first: if it refuses, the saved value would be a lie.
-  try {
-    await syncApifySchedule(intervalHours);
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "تعذر تحديث الجدولة في Apify." },
-      { status: 502 }
-    );
+  const done: string[] = [];
+  let cron: string | undefined;
+
+  if (wantsInterval) {
+    const intervalHours = Number(body?.intervalHours);
+    try {
+      cron = cronForInterval(intervalHours);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "قيمة غير صالحة." },
+        { status: 400 }
+      );
+    }
+
+    // Apify goes first: if it refuses, the saved value would be a lie.
+    try {
+      await syncApifySchedule(intervalHours);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "تعذر تحديث الجدولة في Apify." },
+        { status: 502 }
+      );
+    }
+
+    const { error } = await supabase
+      .from("schedule_settings")
+      .upsert({ id: 1, interval_hours: intervalHours, updated_at: new Date().toISOString() });
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    done.push(`البحث كل ${intervalHours} ساعة`);
   }
 
-  const { error } = await supabase
-    .from("schedule_settings")
-    .upsert({ id: 1, interval_hours: intervalHours, updated_at: new Date().toISOString() });
+  if (wantsLimit) {
+    try {
+      const result = await syncApifyResultsLimit(Number(body?.resultsLimit));
+      done.push(`${result.limit} نتيجة لكل مجموعة (الحقل ${result.key})`);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "تعذر تحديث عدد النتائج." },
+        { status: 502 }
+      );
+    }
+  }
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  return NextResponse.json({
-    intervalHours,
-    cron,
-    message: `تم ضبط البحث كل ${intervalHours} ساعة.`
-  });
+  return NextResponse.json({ cron, message: `تم الحفظ: ${done.join("، ")}.` });
 }

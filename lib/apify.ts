@@ -112,6 +112,58 @@ export async function syncApifyGroups(urls: string[]) {
   return { key, count: urls.length };
 }
 
+// Every actor names its cap differently, and the saved task only carries the
+// one its own actor uses. Guessing writes a key nobody reads: the call
+// succeeds, the cap never changes, and nothing says so.
+const LIMIT_KEYS = ["resultsLimit", "maxPosts", "maxItems", "maxResults", "postsLimit", "limit"];
+
+export function findLimitKey(input: TaskInput) {
+  for (const key of LIMIT_KEYS) {
+    if (typeof input[key] === "number") return key;
+  }
+  return null;
+}
+
+export type TaskOverview = {
+  urlKey: string;
+  groupCount: number;
+  limitKey: string | null;
+  resultsLimit: number | null;
+};
+
+export async function getTaskOverview(): Promise<TaskOverview> {
+  const input = await getTaskInput();
+  const urlKey = findUrlKey(input);
+  const limitKey = findLimitKey(input);
+  const urls = input[urlKey];
+
+  return {
+    urlKey,
+    groupCount: Array.isArray(urls) ? urls.length : 0,
+    limitKey,
+    resultsLimit: limitKey ? (input[limitKey] as number) : null
+  };
+}
+
+export const MAX_RESULTS_LIMIT = 1000;
+
+export async function syncApifyResultsLimit(limit: number) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_RESULTS_LIMIT) {
+    throw new Error(`عدد النتائج يجب أن يكون رقماً بين 1 و ${MAX_RESULTS_LIMIT}.`);
+  }
+
+  const input = await getTaskInput();
+  // Falls back to the Apify convention when the task has never carried a cap.
+  const key = findLimitKey(input) ?? "resultsLimit";
+
+  await call(`/actor-tasks/${taskId()}/input`, {
+    method: "PUT",
+    body: JSON.stringify({ [key]: limit })
+  });
+
+  return { key, limit };
+}
+
 // "0 */5 * * *" does not mean "every 5 hours": it fires at 0,5,10,15,20 and
 // then waits 4. Only the divisors of 24 spread evenly across the day.
 export const ALLOWED_INTERVALS = [1, 2, 3, 4, 6, 8, 12, 24] as const;

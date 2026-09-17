@@ -694,6 +694,15 @@ function SchedulePanel({ connected }: { connected: boolean }) {
     Array<{ id: string; name: string; cron: string; target: string; isTask: boolean }>
   >([]);
   const [candidatesError, setCandidatesError] = useState("");
+  const [resultsLimit, setResultsLimit] = useState(100);
+  const [maxLimit, setMaxLimit] = useState(1000);
+  const [task, setTask] = useState<{
+    urlKey: string;
+    groupCount: number;
+    limitKey: string | null;
+    resultsLimit: number | null;
+  } | null>(null);
+  const [taskError, setTaskError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -711,6 +720,10 @@ function SchedulePanel({ connected }: { connected: boolean }) {
         setApifyProblem(payload.apify?.problem ?? "");
         setCandidates(payload.candidates ?? []);
         setCandidatesError(payload.candidatesError ?? "");
+        setMaxLimit(payload.maxResultsLimit ?? 1000);
+        setTask(payload.task ?? null);
+        setTaskError(payload.taskError ?? "");
+        if (payload.task?.resultsLimit) setResultsLimit(payload.task.resultsLimit);
       } catch {
         /* the notice below already covers a disconnected dashboard */
       }
@@ -781,14 +794,24 @@ function SchedulePanel({ connected }: { connected: boolean }) {
             ))}
           </select>
         </div>
+        <div className="field">
+          <label>عدد النتائج لكل مجموعة</label>
+          <input
+            max={maxLimit}
+            min={1}
+            onChange={(event) => setResultsLimit(Number(event.target.value))}
+            type="number"
+            value={resultsLimit}
+          />
+        </div>
         <button
           className="button"
           disabled={busy || !connected}
-          onClick={() => post("/api/schedule", { intervalHours })}
+          onClick={() => post("/api/schedule", { intervalHours, resultsLimit })}
           type="button"
         >
           <Clock size={18} />
-          {busy ? "جاري الحفظ..." : "حفظ التوقيت"}
+          {busy ? "جاري الحفظ..." : "حفظ الإعدادات"}
         </button>
         <button
           className="button"
@@ -802,6 +825,25 @@ function SchedulePanel({ connected }: { connected: boolean }) {
       </div>
 
       {message && <div className="notice">{message}</div>}
+
+      {taskError && <div className="notice">{taskError}</div>}
+
+      {task && (
+        <div className="commentBox" style={{ display: "block" }}>
+          <strong>إعدادات الـ Task الحالية في Apify</strong>
+          <div className="muted" style={{ marginTop: 6 }}>
+            المجموعات المرسلة: {task.groupCount} · حقل الروابط: <code>{task.urlKey}</code>
+            {task.limitKey ? (
+              <>
+                {" "}
+                · حد النتائج: <code>{task.limitKey}</code> = {task.resultsLimit}
+              </>
+            ) : (
+              " · لا يوجد حد نتائج محفوظ بعد — أول حفظ سينشئه"
+            )}
+          </div>
+        </div>
+      )}
 
       {cron && (
         <div className="commentBox">
