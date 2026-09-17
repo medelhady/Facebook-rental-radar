@@ -39,7 +39,10 @@ function token() {
 function taskId() {
   const value = clean(process.env.APIFY_TASK_ID);
   if (!value) throw new Error("APIFY_TASK_ID غير موجود في متغيرات البيئة.");
-  return value;
+  // The console shows a task as "user/task-name", but the API path wants
+  // "user~task-name". Copied as shown, the slash turns /actor-tasks/{id}/input
+  // into a different URL and every call comes back 404.
+  return value.replace("/", "~");
 }
 
 function scheduleId() {
