@@ -415,7 +415,7 @@ function LeadsPanel({ leads }: { leads: Lead[] }) {
             <tr>
               <th>الحساب</th>
               <th>المجموعة</th>
-              <th>البيانات</th>
+              <th>الهاتف والمنشور</th>
               <th>النص</th>
               <th>الثقة</th>
               <th>الحالة</th>
@@ -430,9 +430,17 @@ function LeadsPanel({ leads }: { leads: Lead[] }) {
                 </td>
                 <td>{lead.groupName}</td>
                 <td>
-                  <div>الهاتف: {lead.phone ?? "-"}</div>
-                  <div>السعر: {lead.price ?? "-"}</div>
-                  <div>الموقع: {lead.location ?? "-"}</div>
+                  {lead.phone ? (
+                    <div>
+                      <strong>{lead.phone}</strong>
+                    </div>
+                  ) : (
+                    <div className="muted">بدون رقم</div>
+                  )}
+                  <div className="muted">{leadDate(lead)}</div>
+                  <a href={lead.postUrl} rel="noreferrer" target="_blank">
+                    <ExternalLink size={14} /> المنشور
+                  </a>
                 </td>
                 <td className="leadText">{lead.postText}</td>
                 <td>
@@ -825,6 +833,15 @@ function Panel({
       <div className="panelBody">{children}</div>
     </section>
   );
+}
+
+// The date the ad was posted, not the date we happened to scrape it.
+// Manual captures carry no published date, so they fall back to first seen.
+function leadDate(lead: Lead) {
+  const raw = lead.publishedAt ?? lead.firstSeenAt;
+  if (!raw) return "-";
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? "-" : dateFormatter.format(parsed);
 }
 
 function statusLabel(status: string) {
