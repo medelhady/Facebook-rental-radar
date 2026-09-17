@@ -36,7 +36,10 @@ async function ingest(request: Request) {
       { status: 503 }
     );
   }
-  if (new URL(request.url).searchParams.get("secret") !== expected) {
+  // A Base64 secret can contain "+", and URLSearchParams reads that back as a
+  // space. Both readings are compared so a correct secret is never rejected.
+  const provided = new URL(request.url).searchParams.get("secret") ?? "";
+  if (provided !== expected && provided.replace(/ /g, "+") !== expected) {
     return NextResponse.json({ error: "مفتاح الويب هوك غير صحيح." }, { status: 401 });
   }
 
