@@ -21,6 +21,17 @@ type Body = {
 };
 
 export async function POST(request: Request) {
+  try {
+    return await saveLead(request);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "خطأ غير متوقع أثناء الحفظ." },
+      { status: 500 }
+    );
+  }
+}
+
+async function saveLead(request: Request) {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return NextResponse.json(

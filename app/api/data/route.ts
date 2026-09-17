@@ -22,6 +22,22 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
 export async function GET() {
+  try {
+    return await loadDashboardData();
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "خطأ غير متوقع أثناء القراءة من قاعدة البيانات."
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function loadDashboardData() {
   const supabase = getSupabaseAdmin();
 
   if (!supabase) {
