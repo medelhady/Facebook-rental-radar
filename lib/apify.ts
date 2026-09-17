@@ -149,15 +149,17 @@ export async function listSchedules(): Promise<ScheduleSummary[]> {
   } | null;
 
   return (data?.data?.items ?? []).map((item) => {
-    const action = (item.actions ?? [])[0] ?? {};
+    // A schedule can hold several actions and starts all of them together, so
+    // reading only the first hides an Actor sitting behind a correct Task.
+    const actions = (item.actions ?? []) as Array<Record<string, any>>;
     return {
       id: String(item.id ?? ""),
       name: String(item.name ?? ""),
       cron: String(item.cronExpression ?? ""),
-      target: String(action.actorTaskId ?? action.actorId ?? ""),
-      // A schedule pointed at the Actor runs with an empty default input:
-      // no cookies, no groups, no results, and no error either.
-      isTask: action.type === "RUN_ACTOR_TASK"
+      target: actions.map((a) => String(a.actorTaskId ?? a.actorId ?? "")).join("، "),
+      // An Actor among them runs with an empty default input: no cookies, no
+      // groups, no results, and no error either.
+      isTask: actions.length > 0 && actions.every((a) => a.type === "RUN_ACTOR_TASK")
     };
   });
 }
