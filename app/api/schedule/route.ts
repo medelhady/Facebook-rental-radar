@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { ALLOWED_INTERVALS, apifyConfigStatus, cronForInterval, syncApifySchedule } from "@/lib/apify";
+import {
+  ALLOWED_INTERVALS,
+  apifyConfigStatus,
+  cronForInterval,
+  listSchedules,
+  syncApifySchedule,
+  type ScheduleSummary
+} from "@/lib/apify";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -20,12 +27,22 @@ export async function GET() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const intervalHours = data?.interval_hours ?? 6;
+  const apify = apifyConfigStatus();
+
+  // With a token but no schedule id, the account's schedules are listed so the
+  // id can be read off this screen instead of the Apify console.
+  let candidates: ScheduleSummary[] = [];
+  if (apify.hasToken && !apify.hasScheduleId) {
+    candidates = await listSchedules().catch(() => []);
+  }
+
   return NextResponse.json({
     intervalHours,
     cron: cronForInterval(intervalHours),
     updatedAt: data?.updated_at ?? null,
     allowed: ALLOWED_INTERVALS,
-    apify: apifyConfigStatus()
+    apify,
+    candidates
   });
 }
 

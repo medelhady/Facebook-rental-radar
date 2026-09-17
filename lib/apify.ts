@@ -132,6 +132,36 @@ export async function syncApifySchedule(intervalHours: number) {
   return cron;
 }
 
+export type ScheduleSummary = {
+  id: string;
+  name: string;
+  cron: string;
+  target: string;
+  isTask: boolean;
+};
+
+// Shown when APIFY_SCHEDULE_ID is missing. The console only displays the
+// schedule's name, while the API path needs its id, and hunting for that id in
+// the address bar is where this setup usually stalls.
+export async function listSchedules(): Promise<ScheduleSummary[]> {
+  const data = (await call("/schedules?limit=50")) as {
+    data?: { items?: Array<Record<string, any>> };
+  } | null;
+
+  return (data?.data?.items ?? []).map((item) => {
+    const action = (item.actions ?? [])[0] ?? {};
+    return {
+      id: String(item.id ?? ""),
+      name: String(item.name ?? ""),
+      cron: String(item.cronExpression ?? ""),
+      target: String(action.actorTaskId ?? action.actorId ?? ""),
+      // A schedule pointed at the Actor runs with an empty default input:
+      // no cookies, no groups, no results, and no error either.
+      isTask: action.type === "RUN_ACTOR_TASK"
+    };
+  });
+}
+
 export type ApifyPost = {
   id?: string;
   url?: string;

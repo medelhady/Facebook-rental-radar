@@ -682,6 +682,9 @@ function SchedulePanel({ connected }: { connected: boolean }) {
   const [allowed, setAllowed] = useState<number[]>([1, 2, 3, 4, 6, 8, 12, 24]);
   const [cron, setCron] = useState("");
   const [apifyProblem, setApifyProblem] = useState("");
+  const [candidates, setCandidates] = useState<
+    Array<{ id: string; name: string; cron: string; target: string; isTask: boolean }>
+  >([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -697,6 +700,7 @@ function SchedulePanel({ connected }: { connected: boolean }) {
         setAllowed(payload.allowed);
         setCron(payload.cron);
         setApifyProblem(payload.apify?.problem ?? "");
+        setCandidates(payload.candidates ?? []);
       } catch {
         /* the notice below already covers a disconnected dashboard */
       }
@@ -731,6 +735,25 @@ function SchedulePanel({ connected }: { connected: boolean }) {
     <Panel title="وقت البحث" subtitle="كل كم ساعة يمر Apify على المجموعات المتابَعة.">
       {!connected && <div className="notice">لا يمكن الحفظ قبل ربط Supabase.</div>}
       {apifyProblem && <div className="notice">{apifyProblem} أضفه في متغيرات البيئة ثم أعد التشغيل.</div>}
+
+      {candidates.length > 0 && (
+        <div className="commentBox" style={{ display: "block" }}>
+          <strong>جدولاتك في Apify</strong> — انسخ الـ id وضعه في APIFY_SCHEDULE_ID:
+          <ul style={{ margin: "8px 0 0", paddingInlineStart: 18 }}>
+            {candidates.map((item) => (
+              <li key={item.id} style={{ marginBottom: 6 }}>
+                <code>{item.id}</code> — {item.name} ({item.cron})
+                {!item.isTask && (
+                  <div style={{ color: "#b45309" }}>
+                    ⚠ هذه الجدولة مربوطة بالـ Actor مباشرة، لا بالـ Task. ستعمل بإعدادات فاضية بدون
+                    الكوكيز والمجموعات. عدّلها في Apify قبل استخدامها.
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="formGrid">
         <div className="field">
