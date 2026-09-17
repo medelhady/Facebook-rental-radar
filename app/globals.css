@@ -372,3 +372,141 @@ th {
     display: block;
   }
 }
+
+/* ---------- Mobile capture screen (Android share target) ---------- */
+
+.capture {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 18px 16px 48px;
+}
+
+.captureHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.captureHead h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.captureHead p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.captureCard {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.captureCard h2 {
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+
+.captureRow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.captureRow .button {
+  white-space: nowrap;
+}
+
+.captureBig {
+  width: 100%;
+  font-size: 17px;
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+
+.captureGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.captureOk {
+  text-align: center;
+  padding: 26px 16px;
+}
+
+.captureOk strong {
+  display: block;
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+
+.linkBtn {
+  background: none;
+  border: none;
+  color: var(--blue);
+  font: inherit;
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+/* ---------- Phone layout for the dashboard itself ---------- */
+
+@media (max-width: 860px) {
+  .shell {
+    display: block;
+  }
+
+  .sidebar {
+    position: static;
+    width: auto;
+    height: auto;
+    border-left: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .nav {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 6px;
+  }
+
+  .navItem {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  .main {
+    padding: 16px 14px 40px;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .grid,
+  .contentGrid,
+  .formGrid,
+  .captureGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .tableWrap {
+    overflow-x: auto;
+  }
+
+  table {
+    min-width: 640px;
+  }
+}
