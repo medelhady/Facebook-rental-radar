@@ -1,3 +1,5 @@
+import { normalizeArabic } from "./normalize-arabic";
+
 // Mauritanian mobile numbers are 8 digits starting with 2, 3 or 4
 // (Mattel, Mauritel, Chinguitel), written with or without +222 and often
 // spaced in pairs: "36 93 00 96".
@@ -104,9 +106,11 @@ export function createDuplicateHash(input: {
   location?: string;
   postText: string;
 }) {
+  // The same ad gets reposted days apart under a new post id, sometimes with a
+  // stray zero-width character in front, so the hash runs on normalized text.
   const base = input.phone
     ? `${input.phone}:${input.location ?? ""}:${input.price ?? ""}`
-    : `${input.authorName}:${input.postText.slice(0, 120)}`;
+    : `${normalizeArabic(input.authorName)}:${normalizeArabic(input.postText).slice(0, 120)}`;
 
   let hash = 0;
   for (let i = 0; i < base.length; i += 1) {

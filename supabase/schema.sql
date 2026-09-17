@@ -143,18 +143,9 @@ create policy "authenticated read scan runs"
   to authenticated
   using (true);
 
-insert into public.keywords (value, type) values
-  ('للايجار', 'include'),
-  ('للإيجار', 'include'),
-  ('شقة', 'include'),
-  ('فيلا', 'include'),
-  ('غرفة', 'include'),
-  ('للبيع', 'exclude'),
-  ('تم التأجير', 'exclude'),
-  ('النرجس', 'location'),
-  ('الياسمين', 'location'),
-  ('السلامة', 'location')
-on conflict do nothing;
+-- The keyword dictionary lives in supabase/apify-collection.sql. It is seeded
+-- there, not here, because the terms are Hassaniya and were chosen against real
+-- Nouakchott posts — the Gulf words this file used to seed matched almost none.
 
 insert into public.comment_templates (title, body) values
   ('طلب تواصل مهذب', 'السلام عليكم، مهتمين بالتفاصيل. فضلا تواصل معنا على الخاص.'),

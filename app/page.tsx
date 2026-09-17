@@ -3,11 +3,13 @@
 import {
   Activity,
   ClipboardCheck,
+  Clock,
   Database,
   ExternalLink,
   FileSearch,
   MessageSquare,
   Plus,
+  RefreshCw,
   Radar,
   Search,
   Settings,
@@ -32,7 +34,15 @@ const dateFormatter = new Intl.DateTimeFormat("ar", {
   timeStyle: "short"
 });
 
-type View = "dashboard" | "groups" | "keywords" | "capture" | "leads" | "comments" | "settings";
+type View =
+  | "dashboard"
+  | "groups"
+  | "keywords"
+  | "capture"
+  | "leads"
+  | "comments"
+  | "schedule"
+  | "settings";
 
 type RadarData = {
   source: "demo" | "supabase";
@@ -61,6 +71,7 @@ const navItems: Array<{
   { id: "capture", label: "إضافة منشور", icon: Sparkles },
   { id: "leads", label: "نتائج الرصد", icon: FileSearch },
   { id: "comments", label: "قوالب التعليق", icon: MessageSquare },
+  { id: "schedule", label: "وقت البحث", icon: Clock },
   { id: "settings", label: "الإعدادات", icon: Settings }
 ];
 
@@ -220,6 +231,7 @@ export default function Home() {
         {activeView === "comments" && (
           <CommentsPanel connected={connected} expanded onSaved={refresh} templates={data.commentTemplates} />
         )}
+        {activeView === "schedule" && <SchedulePanel connected={connected} />}
         {activeView === "settings" && (
           <section className="contentGrid">
             <ParserPanel parsedSample={parsedSample} sampleText={sampleText} setSampleText={setSampleText} />
@@ -512,6 +524,8 @@ function KeywordsPanel({
             <label>النوع</label>
             <select onChange={(event) => setType(event.target.value)} value={type}>
               <option value="include">كلمة بحث</option>
+              <option value="rent">إيجار</option>
+              <option value="sale">بيع</option>
               <option value="exclude">استبعاد</option>
               <option value="location">موقع</option>
             </select>
@@ -663,6 +677,106 @@ function NextStepPanel() {
   );
 }
 
+function SchedulePanel({ connected }: { connected: boolean }) {
+  const [intervalHours, setIntervalHours] = useState(6);
+  const [allowed, setAllowed] = useState<number[]>([1, 2, 3, 4, 6, 8, 12, 24]);
+  const [cron, setCron] = useState("");
+  const [apifyProblem, setApifyProblem] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const response = await fetch("/api/schedule", { cache: "no-store" });
+        const payload = await response.json();
+        if (cancelled || !response.ok) return;
+        setIntervalHours(payload.intervalHours);
+        setAllowed(payload.allowed);
+        setCron(payload.cron);
+        setApifyProblem(payload.apify?.problem ?? "");
+      } catch {
+        /* the notice below already covers a disconnected dashboard */
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function post(url: string, body?: unknown) {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const payload = await response.json();
+      setMessage(response.ok ? payload.message ?? "تم." : payload?.error ?? "تعذر تنفيذ الطلب.");
+      if (response.ok && payload.cron) setCron(payload.cron);
+    } catch {
+      setMessage("تعذر الاتصال بالخادم. حاول مرة أخرى.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel title="وقت البحث" subtitle="كل كم ساعة يمر Apify على المجموعات المتابَعة.">
+      {!connected && <div className="notice">لا يمكن الحفظ قبل ربط Supabase.</div>}
+      {apifyProblem && <div className="notice">{apifyProblem} أضفه في متغيرات البيئة ثم أعد التشغيل.</div>}
+
+      <div className="formGrid">
+        <div className="field">
+          <label>كل كم ساعة</label>
+          <select
+            onChange={(event) => setIntervalHours(Number(event.target.value))}
+            value={intervalHours}
+          >
+            {allowed.map((hours) => (
+              <option key={hours} value={hours}>
+                كل {hours} ساعة
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          className="button"
+          disabled={busy || !connected}
+          onClick={() => post("/api/schedule", { intervalHours })}
+          type="button"
+        >
+          <Clock size={18} />
+          {busy ? "جاري الحفظ..." : "حفظ التوقيت"}
+        </button>
+        <button
+          className="button"
+          disabled={busy}
+          onClick={() => post("/api/apify-sync")}
+          type="button"
+        >
+          <RefreshCw size={18} />
+          دفع المجموعات إلى Apify
+        </button>
+      </div>
+
+      {message && <div className="notice">{message}</div>}
+
+      {cron && (
+        <div className="commentBox">
+          <ClipboardCheck size={18} /> صيغة التشغيل الحالية في Apify: <code>{cron}</code>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function Panel({
   title,
   subtitle,
@@ -707,6 +821,8 @@ function statusClass(status: string) {
 function keywordLabel(type: string) {
   const labels: Record<string, string> = {
     include: "بحث",
+    rent: "إيجار",
+    sale: "بيع",
     exclude: "استبعاد",
     location: "موقع"
   };
@@ -721,6 +837,7 @@ function viewSubtitle(view: View) {
     capture: "الصق منشوراً رأيته بنفسك وحوله إلى Lead محفوظ.",
     leads: "مراجعة المنشورات المطابقة والبيانات المستخرجة منها.",
     comments: "إدارة الرسائل الجاهزة التي ستستخدم للموافقة اليدوية قبل التعليق.",
+    schedule: "تحديد كل كم ساعة يبحث Apify، ودفع قائمة المجموعات إليه.",
     settings: "اختبار الاستخراج وتجهيز إعدادات التشغيل القادمة."
   };
   return subtitles[view];

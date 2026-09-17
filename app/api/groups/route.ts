@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { pushActiveGroups } from "@/lib/apify-sync";
 import { mapGroup, type GroupRow } from "@/lib/mappers";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -51,5 +52,41 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ group: mapGroup(data as GroupRow) }, { status: 201 });
+  // The group is saved either way. A failure to reach Apify is reported as a
+  // warning, not an error, so the row is not lost over a bad token.
+  let warning: string | undefined;
+  try {
+    await pushActiveGroups();
+  } catch (syncError) {
+    warning = syncError instanceof Error ? syncError.message : "تعذر تحديث قائمة المجموعات في Apify.";
+  }
+
+  return NextResponse.json({ group: mapGroup(data as GroupRow), warning }, { status: 201 });
+}
+
+export async function DELETE(request: Request) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "قاعدة البيانات غير مربوطة. أضف مفاتيح Supabase في .env.local ثم أعد التشغيل." },
+      { status: 503 }
+    );
+  }
+
+  const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
+  if (!id) {
+    return NextResponse.json({ error: "حدد المجموعة المطلوب حذفها." }, { status: 400 });
+  }
+
+  const { error } = await supabase.from("facebook_groups").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  let warning: string | undefined;
+  try {
+    await pushActiveGroups();
+  } catch (syncError) {
+    warning = syncError instanceof Error ? syncError.message : "تعذر تحديث قائمة المجموعات في Apify.";
+  }
+
+  return NextResponse.json({ deleted: true, warning });
 }

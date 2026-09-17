@@ -1,6 +1,7 @@
 export type SourceStatus = "active" | "paused" | "error";
 export type LeadStatus = "new" | "comment_ready" | "contacted" | "duplicate" | "ignored";
-export type KeywordType = "include" | "exclude" | "location";
+export type KeywordType = "include" | "exclude" | "location" | "rent" | "sale";
+export type OfferType = "rent" | "sale" | "unknown";
 
 export type FacebookGroup = {
   id: string;
@@ -39,6 +40,7 @@ export type Lead = {
   price?: string;
   location?: string;
   confidence: number;
+  offerType: OfferType;
   status: LeadStatus;
   suggestedComment: string;
   publishedAt?: string;

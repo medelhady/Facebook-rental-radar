@@ -5,6 +5,7 @@ import type {
   KeywordType,
   Lead,
   LeadStatus,
+  OfferType,
   SourceStatus
 } from "./types";
 
@@ -43,6 +44,7 @@ export type LeadRow = {
   price: string | null;
   location: string | null;
   confidence: number;
+  offer_type: OfferType | null;
   status: LeadStatus;
   suggested_comment: string | null;
   published_at: string | null;
@@ -85,6 +87,7 @@ export function mapLead(row: LeadRow, groupName: string): Lead {
     price: row.price ?? undefined,
     location: row.location ?? undefined,
     confidence: row.confidence,
+    offerType: row.offer_type ?? "unknown",
     status: row.status,
     suggestedComment: row.suggested_comment ?? "",
     publishedAt: row.published_at ?? undefined,

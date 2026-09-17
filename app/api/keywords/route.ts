@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 // supabase-js calls fetch(); without this Next caches the first response forever.
 export const fetchCache = "force-no-store";
 
-const allowedTypes: KeywordType[] = ["include", "exclude", "location"];
+const allowedTypes: KeywordType[] = ["include", "rent", "sale", "exclude", "location"];
 
 export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
