@@ -11,11 +11,13 @@ import {
   Radar,
   Search,
   Settings,
+  Sparkles,
   type LucideIcon
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { commentTemplates, groups, keywords, leads } from "@/lib/demo-data";
-import type { FacebookGroup } from "@/lib/types";
+import type { CommentTemplate, FacebookGroup, Keyword, Lead } from "@/lib/types";
+import { buildLeadDraft, type LeadFields } from "@/lib/lead-pipeline";
 import {
   createDuplicateHash,
   extractLocation,
@@ -30,7 +32,23 @@ const dateFormatter = new Intl.DateTimeFormat("ar", {
   timeStyle: "short"
 });
 
-type View = "dashboard" | "groups" | "keywords" | "leads" | "comments" | "settings";
+type View = "dashboard" | "groups" | "keywords" | "capture" | "leads" | "comments" | "settings";
+
+type RadarData = {
+  source: "demo" | "supabase";
+  groups: FacebookGroup[];
+  keywords: Keyword[];
+  commentTemplates: CommentTemplate[];
+  leads: Lead[];
+};
+
+const demoData: RadarData = {
+  source: "demo",
+  groups,
+  keywords,
+  commentTemplates,
+  leads
+};
 
 const navItems: Array<{
   id: View;
@@ -40,6 +58,7 @@ const navItems: Array<{
   { id: "dashboard", label: "لوحة التحكم", icon: Activity },
   { id: "groups", label: "مصادر المجموعات", icon: Database },
   { id: "keywords", label: "قاموس الكلمات", icon: Search },
+  { id: "capture", label: "إضافة منشور", icon: Sparkles },
   { id: "leads", label: "نتائج الرصد", icon: FileSearch },
   { id: "comments", label: "قوالب التعليق", icon: MessageSquare },
   { id: "settings", label: "الإعدادات", icon: Settings }
@@ -47,14 +66,35 @@ const navItems: Array<{
 
 export default function Home() {
   const [activeView, setActiveView] = useState<View>("dashboard");
-  const [radarGroups, setRadarGroups] = useState<FacebookGroup[]>(groups);
+  const [data, setData] = useState<RadarData>(demoData);
+  const [loadError, setLoadError] = useState("");
   const [sampleText, setSampleText] = useState(
     "شقة للايجار حي النرجس 3 غرف وصالة السعر 4200 شهري للتواصل 0551112233"
   );
 
-  const locationWords = keywords
-    .filter((keyword) => keyword.type === "location")
-    .map((keyword) => keyword.value);
+  const refresh = useCallback(async () => {
+    try {
+      const response = await fetch("/api/data", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "تعذر تحميل البيانات من قاعدة البيانات.");
+      }
+      setData(payload as RadarData);
+      setLoadError("");
+    } catch (error) {
+      setData(demoData);
+      setLoadError(error instanceof Error ? error.message : "تعذر الاتصال بقاعدة البيانات.");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const locationWords = useMemo(
+    () => data.keywords.filter((keyword) => keyword.type === "location").map((keyword) => keyword.value),
+    [data.keywords]
+  );
 
   const parsedSample = useMemo(() => {
     const phone = extractPhone(sampleText);
@@ -77,10 +117,11 @@ export default function Home() {
     };
   }, [locationWords, sampleText]);
 
-  const activeGroups = radarGroups.filter((group) => group.status === "active").length;
-  const phoneLeads = leads.filter((lead) => lead.phone).length;
-  const readyComments = leads.filter((lead) => lead.status === "comment_ready").length;
+  const activeGroups = data.groups.filter((group) => group.status === "active").length;
+  const phoneLeads = data.leads.filter((lead) => lead.phone).length;
+  const readyComments = data.leads.filter((lead) => lead.status === "comment_ready").length;
   const pageTitle = navItems.find((item) => item.id === activeView)?.label ?? "لوحة التحكم";
+  const connected = data.source === "supabase";
 
   return (
     <div className="shell">
@@ -124,19 +165,32 @@ export default function Home() {
           </button>
         </section>
 
+        {!connected && (
+          <div className="notice">
+            {loadError
+              ? `${loadError} — المعروض الآن بيانات تجريبية.`
+              : "قاعدة البيانات غير مربوطة بعد. المعروض بيانات تجريبية ولن يحفظ أي شيء."}
+          </div>
+        )}
+
         {(activeView === "dashboard" || activeView === "groups" || activeView === "leads") && (
-          <Stats activeGroups={activeGroups} phoneLeads={phoneLeads} readyComments={readyComments} />
+          <Stats
+            activeGroups={activeGroups}
+            leadsCount={data.leads.length}
+            phoneLeads={phoneLeads}
+            readyComments={readyComments}
+          />
         )}
 
         {activeView === "dashboard" && (
           <section className="contentGrid">
             <div>
-              <GroupsPanel groups={radarGroups} setGroups={setRadarGroups} />
-              <LeadsPanel />
+              <GroupsPanel connected={connected} groups={data.groups} onSaved={refresh} />
+              <LeadsPanel leads={data.leads} />
             </div>
             <div>
-              <KeywordsPanel />
-              <CommentsPanel />
+              <KeywordsPanel keywords={data.keywords} />
+              <CommentsPanel templates={data.commentTemplates} />
               <ParserPanel
                 parsedSample={parsedSample}
                 sampleText={sampleText}
@@ -147,10 +201,25 @@ export default function Home() {
           </section>
         )}
 
-        {activeView === "groups" && <GroupsPanel groups={radarGroups} setGroups={setRadarGroups} />}
-        {activeView === "keywords" && <KeywordsPanel expanded />}
-        {activeView === "leads" && <LeadsPanel />}
-        {activeView === "comments" && <CommentsPanel expanded />}
+        {activeView === "groups" && (
+          <GroupsPanel connected={connected} groups={data.groups} onSaved={refresh} />
+        )}
+        {activeView === "keywords" && (
+          <KeywordsPanel connected={connected} expanded keywords={data.keywords} onSaved={refresh} />
+        )}
+        {activeView === "capture" && (
+          <CapturePanel
+            connected={connected}
+            groups={data.groups}
+            keywords={data.keywords}
+            onSaved={refresh}
+            templates={data.commentTemplates}
+          />
+        )}
+        {activeView === "leads" && <LeadsPanel leads={data.leads} />}
+        {activeView === "comments" && (
+          <CommentsPanel connected={connected} expanded onSaved={refresh} templates={data.commentTemplates} />
+        )}
         {activeView === "settings" && (
           <section className="contentGrid">
             <ParserPanel parsedSample={parsedSample} sampleText={sampleText} setSampleText={setSampleText} />
@@ -164,10 +233,12 @@ export default function Home() {
 
 function Stats({
   activeGroups,
+  leadsCount,
   phoneLeads,
   readyComments
 }: {
   activeGroups: number;
+  leadsCount: number;
   phoneLeads: number;
   readyComments: number;
 }) {
@@ -179,7 +250,7 @@ function Stats({
       </div>
       <div className="stat">
         <span>Leads جديدة</span>
-        <strong>{leads.length}</strong>
+        <strong>{leadsCount}</strong>
       </div>
       <div className="stat">
         <span>Leads فيها أرقام</span>
@@ -194,50 +265,52 @@ function Stats({
 }
 
 function GroupsPanel({
+  connected,
   groups,
-  setGroups
+  onSaved
 }: {
+  connected: boolean;
   groups: FacebookGroup[];
-  setGroups: React.Dispatch<React.SetStateAction<FacebookGroup[]>>;
+  onSaved: () => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [location, setLocation] = useState("");
   const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  function handleAddGroup() {
-    const cleanName = name.trim();
-    const cleanUrl = normalizeFacebookUrl(url);
-
-    if (!cleanName || !cleanUrl) {
-      setMessage("اكتب اسم المجموعة ورابط صحيح يبدأ بـ https://");
+  async function handleAddGroup() {
+    if (!connected) {
+      setMessage("لا يمكن الحفظ قبل ربط Supabase.");
       return;
     }
 
-    if (!cleanUrl.includes("facebook.com/groups/")) {
-      setMessage("الرابط يجب أن يكون رابط مجموعة فيسبوك.");
-      return;
-    }
+    setSaving(true);
+    setMessage("");
 
-    const exists = groups.some((group) => group.url === cleanUrl);
-    if (exists) {
-      setMessage("هذه المجموعة موجودة مسبقاً.");
-      return;
-    }
+    try {
+      const response = await fetch("/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, url, location })
+      });
+      const payload = await response.json();
 
-    setGroups((currentGroups) => [
-      {
-        id: `local-${Date.now()}`,
-        name: cleanName,
-        url: cleanUrl,
-        status: "active",
-        lastCheckedAt: undefined,
-        newPosts: 0
-      },
-      ...currentGroups
-    ]);
-    setName("");
-    setUrl("");
-    setMessage("تمت إضافة المجموعة إلى القائمة. الحفظ الدائم سيكون بعد ربط Supabase.");
+      if (!response.ok) {
+        setMessage(payload?.error ?? "تعذر حفظ المجموعة.");
+        return;
+      }
+
+      setName("");
+      setUrl("");
+      setLocation("");
+      setMessage("تم حفظ المجموعة في قاعدة البيانات.");
+      await onSaved();
+    } catch {
+      setMessage("تعذر الاتصال بالخادم. حاول مرة أخرى.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -260,9 +333,17 @@ function GroupsPanel({
             value={url}
           />
         </div>
-        <button className="button" onClick={handleAddGroup} type="button">
+        <div className="field">
+          <label>المدينة</label>
+          <input
+            onChange={(event) => setLocation(event.target.value)}
+            placeholder="مثال: الرياض"
+            value={location}
+          />
+        </div>
+        <button className="button" disabled={saving} onClick={handleAddGroup} type="button">
           <Plus size={18} />
-          حفظ
+          {saving ? "جاري الحفظ..." : "حفظ"}
         </button>
       </div>
       {message && <div className="notice">{message}</div>}
@@ -299,6 +380,13 @@ function GroupsPanel({
                 </td>
               </tr>
             ))}
+            {groups.length === 0 && (
+              <tr>
+                <td className="muted" colSpan={6}>
+                  لا توجد مجموعات بعد. أضف أول رابط من النموذج بالأعلى.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -306,7 +394,7 @@ function GroupsPanel({
   );
 }
 
-function LeadsPanel() {
+function LeadsPanel({ leads }: { leads: Lead[] }) {
   return (
     <Panel title="نتائج الرصد" subtitle="كل منشور مناسب يتحول إلى Lead مع نص تعليق مقترح وحالة متابعة.">
       <div className="tableWrap">
@@ -346,6 +434,13 @@ function LeadsPanel() {
                 </td>
               </tr>
             ))}
+            {leads.length === 0 && (
+              <tr>
+                <td className="muted" colSpan={6}>
+                  لا توجد نتائج بعد. الـ Worker لم يسجل أي Lead حتى الآن.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -353,29 +448,81 @@ function LeadsPanel() {
   );
 }
 
-function KeywordsPanel({ expanded = false }: { expanded?: boolean }) {
+function KeywordsPanel({
+  connected = false,
+  expanded = false,
+  keywords,
+  onSaved
+}: {
+  connected?: boolean;
+  expanded?: boolean;
+  keywords: Keyword[];
+  onSaved?: () => Promise<void>;
+}) {
+  const [value, setValue] = useState("");
+  const [type, setType] = useState("include");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleAddKeyword() {
+    if (!connected) {
+      setMessage("لا يمكن الحفظ قبل ربط Supabase.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/keywords", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value, type })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setMessage(payload?.error ?? "تعذر حفظ الكلمة.");
+        return;
+      }
+
+      setValue("");
+      setMessage("تمت إضافة الكلمة.");
+      await onSaved?.();
+    } catch {
+      setMessage("تعذر الاتصال بالخادم. حاول مرة أخرى.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Panel title="قاموس الكلمات" subtitle="الكلمات التي تحدد هل المنشور يستحق المتابعة.">
       {expanded && (
         <div className="formGrid" style={{ marginBottom: 16 }}>
           <div className="field">
             <label>الكلمة</label>
-            <input placeholder="مثال: شقة للايجار" />
+            <input
+              onChange={(event) => setValue(event.target.value)}
+              placeholder="مثال: شقة للايجار"
+              value={value}
+            />
           </div>
           <div className="field">
             <label>النوع</label>
-            <select defaultValue="include">
+            <select onChange={(event) => setType(event.target.value)} value={type}>
               <option value="include">كلمة بحث</option>
               <option value="exclude">استبعاد</option>
               <option value="location">موقع</option>
             </select>
           </div>
-          <button className="button" type="button">
+          <button className="button" disabled={saving} onClick={handleAddKeyword} type="button">
             <Plus size={18} />
-            إضافة
+            {saving ? "جاري الحفظ..." : "إضافة"}
           </button>
         </div>
       )}
+      {expanded && message && <div className="notice">{message}</div>}
       <div className="chips">
         {keywords.map((keyword) => (
           <span className="chip" key={keyword.id}>
@@ -387,16 +534,89 @@ function KeywordsPanel({ expanded = false }: { expanded?: boolean }) {
   );
 }
 
-function CommentsPanel({ expanded = false }: { expanded?: boolean }) {
+function CommentsPanel({
+  connected = false,
+  expanded = false,
+  onSaved,
+  templates
+}: {
+  connected?: boolean;
+  expanded?: boolean;
+  onSaved?: () => Promise<void>;
+  templates: CommentTemplate[];
+}) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleAddTemplate() {
+    if (!connected) {
+      setMessage("لا يمكن الحفظ قبل ربط Supabase.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setMessage(payload?.error ?? "تعذر حفظ القالب.");
+        return;
+      }
+
+      setTitle("");
+      setBody("");
+      setMessage("تمت إضافة القالب.");
+      await onSaved?.();
+    } catch {
+      setMessage("تعذر الاتصال بالخادم. حاول مرة أخرى.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Panel title="قوالب التعليق" subtitle="النظام يقترح منها ولا ينشر تلقائيا في هذه المرحلة.">
       {expanded && (
-        <div className="field" style={{ marginBottom: 16 }}>
-          <label>قالب جديد</label>
-          <textarea placeholder="السلام عليكم، مهتمين بالتفاصيل..." />
+        <div style={{ marginBottom: 16 }}>
+          <div className="field">
+            <label>عنوان القالب</label>
+            <input
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="مثال: طلب تفاصيل العقار"
+              value={title}
+            />
+          </div>
+          <div className="field" style={{ marginTop: 10 }}>
+            <label>قالب جديد</label>
+            <textarea
+              onChange={(event) => setBody(event.target.value)}
+              placeholder="السلام عليكم، مهتمين بالتفاصيل..."
+              value={body}
+            />
+          </div>
+          <button
+            className="button"
+            disabled={saving}
+            onClick={handleAddTemplate}
+            style={{ marginTop: 10 }}
+            type="button"
+          >
+            <Plus size={18} />
+            {saving ? "جاري الحفظ..." : "إضافة"}
+          </button>
+          {message && <div className="notice">{message}</div>}
         </div>
       )}
-      {commentTemplates.map((template) => (
+      {templates.map((template) => (
         <div className="commentBox" key={template.id} style={{ marginBottom: 10 }}>
           <strong>{template.title}</strong>
           <div>{template.body}</div>
@@ -498,6 +718,7 @@ function viewSubtitle(view: View) {
     dashboard: "ملخص سريع للمجموعات والـ Leads وقوالب التواصل.",
     groups: "أضف روابط مجموعات فيسبوك التي تريد مراقبتها.",
     keywords: "إدارة كلمات البحث والاستبعاد والمناطق المستهدفة.",
+    capture: "الصق منشوراً رأيته بنفسك وحوله إلى Lead محفوظ.",
     leads: "مراجعة المنشورات المطابقة والبيانات المستخرجة منها.",
     comments: "إدارة الرسائل الجاهزة التي ستستخدم للموافقة اليدوية قبل التعليق.",
     settings: "اختبار الاستخراج وتجهيز إعدادات التشغيل القادمة."
@@ -505,9 +726,215 @@ function viewSubtitle(view: View) {
   return subtitles[view];
 }
 
-function normalizeFacebookUrl(value: string) {
-  const trimmed = value.trim().replace(/^\/+/, "");
-  if (!trimmed) return "";
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
-  return `https://${trimmed}`;
+function CapturePanel({
+  connected,
+  groups,
+  keywords,
+  onSaved,
+  templates
+}: {
+  connected: boolean;
+  groups: FacebookGroup[];
+  keywords: Keyword[];
+  onSaved: () => Promise<void>;
+  templates: CommentTemplate[];
+}) {
+  const [postText, setPostText] = useState("");
+  const [postUrl, setPostUrl] = useState("");
+  const [authorName, setAuthorName] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [overrides, setOverrides] = useState<LeadFields>({});
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const draft = useMemo(
+    () => buildLeadDraft({ postText, authorName, keywords, overrides }),
+    [authorName, keywords, overrides, postText]
+  );
+
+  const edited = Object.keys(overrides).length > 0;
+
+  function setField(field: keyof LeadFields, value: string) {
+    setOverrides((current) => ({ ...current, [field]: value }));
+  }
+
+  function resetForm() {
+    setPostText("");
+    setPostUrl("");
+    setAuthorName("");
+    setOverrides({});
+    setTemplateId("");
+  }
+
+  async function handleSave() {
+    if (!connected) {
+      setMessage("لا يمكن الحفظ قبل ربط Supabase.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          postText,
+          postUrl,
+          authorName,
+          groupId,
+          phone: draft.phone ?? "",
+          price: draft.price ?? "",
+          location: draft.location ?? "",
+          officeName: draft.officeName ?? "",
+          suggestedComment: templates.find((template) => template.id === templateId)?.body ?? ""
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setMessage(payload?.error ?? "تعذر حفظ المنشور.");
+        return;
+      }
+
+      resetForm();
+      setMessage(payload?.message ?? "تم حفظ الـ Lead.");
+      await onSaved();
+    } catch {
+      setMessage("تعذر الاتصال بالخادم. حاول مرة أخرى.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="contentGrid">
+      <Panel title="الصق منشوراً" subtitle="انسخ نص المنشور من فيسبوك والصقه هنا، والباقي يستخرجه النظام.">
+        <div className="field">
+          <label>نص المنشور</label>
+          <textarea
+            onChange={(event) => setPostText(event.target.value)}
+            placeholder="للايجار شقة في حي الياسمين غرفتين وصالة السعر 32000 سنوي للتواصل 0559887766"
+            value={postText}
+          />
+        </div>
+        <div className="field" style={{ marginTop: 10 }}>
+          <label>رابط المنشور</label>
+          <input
+            dir="ltr"
+            onChange={(event) => setPostUrl(event.target.value)}
+            placeholder="https://www.facebook.com/groups/.../posts/..."
+            value={postUrl}
+          />
+        </div>
+        <div className="field" style={{ marginTop: 10 }}>
+          <label>اسم صاحب المنشور</label>
+          <input
+            onChange={(event) => setAuthorName(event.target.value)}
+            placeholder="مثال: مكتب ركن الياسمين العقاري"
+            value={authorName}
+          />
+        </div>
+        <div className="field" style={{ marginTop: 10 }}>
+          <label>المجموعة</label>
+          <select onChange={(event) => setGroupId(event.target.value)} value={groupId}>
+            <option value="">بدون تحديد</option>
+            {groups.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field" style={{ marginTop: 10 }}>
+          <label>التعليق المقترح</label>
+          <select onChange={(event) => setTemplateId(event.target.value)} value={templateId}>
+            <option value="">بدون تعليق</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button className="button" disabled={saving} onClick={handleSave} style={{ marginTop: 14 }} type="button">
+          <Plus size={18} />
+          {saving ? "جاري الحفظ..." : "حفظ كـ Lead"}
+        </button>
+        {message && <div className="notice">{message}</div>}
+      </Panel>
+
+      <Panel title="ما استخرجه النظام" subtitle="راجع الحقول وصححها قبل الحفظ. ما تكتبه بيدك هو ما يُحفظ.">
+        {postText.trim().length === 0 ? (
+          <div className="muted">الصق نص المنشور لترى الاستخراج مباشرة.</div>
+        ) : (
+          <>
+            {draft.matchedExclude.length > 0 && (
+              <div className="notice">
+                تحذير: المنشور يحتوي كلمة استبعاد ({draft.matchedExclude.join("، ")}). يمكنك الحفظ رغم ذلك.
+              </div>
+            )}
+            {draft.matchedInclude.length === 0 && (
+              <div className="notice">
+                تنبيه: لا توجد أي كلمة من كلمات البحث في هذا النص. الجامع الآلي كان سيتجاهله.
+              </div>
+            )}
+
+            <div className="field">
+              <label>الهاتف</label>
+              <input
+                dir="ltr"
+                onChange={(event) => setField("phone", event.target.value)}
+                placeholder="لم يُستخرج رقم"
+                value={draft.phone ?? ""}
+              />
+            </div>
+            <div className="field" style={{ marginTop: 10 }}>
+              <label>السعر</label>
+              <input
+                onChange={(event) => setField("price", event.target.value)}
+                placeholder="لم يُستخرج سعر"
+                value={draft.price ?? ""}
+              />
+            </div>
+            <div className="field" style={{ marginTop: 10 }}>
+              <label>الحي أو الموقع</label>
+              <input
+                onChange={(event) => setField("location", event.target.value)}
+                placeholder="لم يُستخرج موقع"
+                value={draft.location ?? ""}
+              />
+            </div>
+            <div className="field" style={{ marginTop: 10 }}>
+              <label>المكتب العقاري</label>
+              <input
+                onChange={(event) => setField("officeName", event.target.value)}
+                placeholder="حساب فردي أو غير مؤكد"
+                value={draft.officeName ?? ""}
+              />
+            </div>
+
+            <div className="commentBox" style={{ marginTop: 14 }}>
+              <div>الثقة: {draft.confidence}%</div>
+              <div className="progress">
+                <span style={{ width: `${draft.confidence}%` }} />
+              </div>
+              <div className="muted">بصمة التكرار: {draft.duplicateHash}</div>
+              {draft.matchedInclude.length > 0 && (
+                <div className="muted">كلمات مطابقة: {draft.matchedInclude.join("، ")}</div>
+              )}
+            </div>
+
+            {edited && (
+              <button className="button" onClick={() => setOverrides({})} style={{ marginTop: 12 }} type="button">
+                إرجاع الحقول للاستخراج التلقائي
+              </button>
+            )}
+          </>
+        )}
+      </Panel>
+    </section>
+  );
 }
