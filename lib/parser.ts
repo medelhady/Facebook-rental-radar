@@ -12,16 +12,21 @@ const saPhonePattern =
 
 // A number only counts as a price when something in the text says it is one.
 // Without that rule a phone number becomes the rent.
-const priceWords = "أوقية|اوقية|أوقيه|اوقيه|MRU|UM|ريال|ر[.]س|درهم|دينار";
+// Prices here are almost never written with a currency. A house is "ب 10
+// ملايين" and a rent is "ب 200الف", so the magnitude word is the unit.
+const priceWords =
+  "أوقية|اوقية|أوقيه|اوقيه|MRU|UM|ريال|ر[.]س|درهم|دينار|مليون|مليونين|ملايين|ألف|الف";
 const periodWords = "شهري|شهريا|شهرياً|في الشهر|بالشهر|الشهر|سنوي|سنويا|سنوياً|في السنة|بالسنة";
 const priceLabels = "السعر|سعر|الكراء|الكرا|كراء|الايجار|الإيجار|ايجار|إيجار|المبلغ|بسعر|القيمة";
 
+// A single digit is a real price when a magnitude word follows it: "ب 5
+// ملايين" is five million, and requiring two digits dropped it silently.
 const labelledPrice = new RegExp(
-  String.raw`(?:${priceLabels})\s*:?\s*([0-9]{2,7})\s*(الف|ألف)?\s*(?:${priceWords})?\s*(?:${periodWords})?`
+  String.raw`(?:${priceLabels})\s*:?\s*([0-9]{1,7})\s*(الف|ألف)?\s*(?:${priceWords})?\s*(?:${periodWords})?`
 );
 
 const suffixedPrice = new RegExp(
-  String.raw`([0-9]{2,7})\s*(الف|ألف)?\s*(?:(?:${priceWords})|(?:${periodWords}))`
+  String.raw`([0-9]{1,7})\s*(الف|ألف)?\s*(?:(?:${priceWords})|(?:${periodWords}))`
 );
 
 const officePattern = /(مكتب|عقارات|للعقارات|وسيط|سمسار|تسويق عقاري|وساطة عقارية|وكالة)/;
@@ -56,7 +61,13 @@ export function extractPrice(text: string, phone?: string) {
   if (!match) return undefined;
 
   const amount = match[1];
-  if (!amount || amount.length < 2) return undefined;
+  if (!amount) return undefined;
+
+  // A lone digit is noise, but "ب 5 ملايين" is a price. Rejecting every
+  // one-digit amount also threw away the whole match instead of falling
+  // through to a later, longer one in the same post.
+  const hasMagnitude = /مليون|مليونين|ملايين|ألف|الف/.test(match[0]);
+  if (amount.length < 2 && !hasMagnitude) return undefined;
 
   return match[0].replace(/\s+/g, " ").trim();
 }
