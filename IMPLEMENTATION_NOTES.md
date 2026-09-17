@@ -16,36 +16,31 @@ It covers:
 
 1. Admin adds Facebook group URLs.
 2. Admin maintains include, exclude, and location keywords.
-3. A scheduled worker runs every 6 hours.
-4. The worker fetches posts from active sources.
+3. Apify runs on the interval set in the dashboard.
+4. The webhook receives the finished run and reads its dataset.
 5. Matching posts are parsed and stored as `facebook_leads`.
 6. The dashboard shows the lead and suggested comment for human approval.
 
-## Facebook collection options
+## Facebook collection
 
-The dashboard is intentionally separated from collection logic.
+Collection runs on Apify (`curious_coder/facebook-post-scraper`) through a saved Task that holds
+the cookies of a dedicated secondary account and a residential proxy. Datacenter proxies failed
+authentication. The dashboard drives that Task and its Schedule over the Apify API, and results
+arrive on the `ACTOR.RUN.SUCCEEDED` webhook. See the README for the console setup.
 
-Recommended order:
+The manual capture screen is kept, not replaced: cookies expire and the account can be locked,
+and pasting a post by hand is the fallback when a run comes back empty.
 
-1. Manual or semi-manual import to validate extraction and lead workflow.
-2. Official Graph API if permissions are available for owned or managed groups.
-3. A separate browser automation worker on Render, Railway, Fly.io, or VPS if API access is not available.
-
-Avoid running browser automation on Vercel serverless functions because it is fragile for long-running sessions.
+Graph API was not an option — these are groups the user does not own.
 
 ## Deployment shape
 
 - Dashboard: Vercel
 - Repository: GitHub
 - Database/Auth: Supabase
-- Scheduler: Supabase Cron, GitHub Actions, or external worker
-- Browser worker if needed: Render/Railway/Fly.io/VPS
+- Scraper and scheduler: Apify (saved Task + Schedule)
 
 ## Verification note
 
-`npm install` did not complete in this local environment. It started without creating `node_modules` or a lockfile and produced no error output. The project files are ready, but a final local build should be run after installing dependencies:
-
-```bash
-npm install
-npm run build
-```
+`npm run build` passes. The filter was measured against 138 real posts exported from two
+Nouakchott groups before it was wired in; the numbers are in the README.
