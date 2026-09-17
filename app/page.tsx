@@ -8,17 +8,21 @@ import {
   ExternalLink,
   FileSearch,
   MessageSquare,
+  Pencil,
   Plus,
   RefreshCw,
   Radar,
   Search,
+  Check,
   Settings,
   Sparkles,
+  Trash2,
+  X,
   type LucideIcon
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { commentTemplates, groups, keywords, leads } from "@/lib/demo-data";
-import type { CommentTemplate, FacebookGroup, Keyword, Lead } from "@/lib/types";
+import type { CommentTemplate, FacebookGroup, Keyword, Lead, LeadStatus } from "@/lib/types";
 import { buildLeadDraft, type LeadFields } from "@/lib/lead-pipeline";
 import {
   createDuplicateHash,
@@ -197,7 +201,7 @@ export default function Home() {
           <section className="contentGrid">
             <div>
               <GroupsPanel connected={connected} groups={data.groups} onSaved={refresh} />
-              <LeadsPanel leads={data.leads} />
+              <LeadsPanel connected={connected} leads={data.leads} onSaved={refresh} />
             </div>
             <div>
               <KeywordsPanel keywords={data.keywords} />
@@ -227,7 +231,7 @@ export default function Home() {
             templates={data.commentTemplates}
           />
         )}
-        {activeView === "leads" && <LeadsPanel leads={data.leads} />}
+        {activeView === "leads" && <LeadsPanel connected={connected} leads={data.leads} onSaved={refresh} />}
         {activeView === "comments" && (
           <CommentsPanel connected={connected} expanded onSaved={refresh} templates={data.commentTemplates} />
         )}
@@ -406,58 +410,197 @@ function GroupsPanel({
   );
 }
 
-function LeadsPanel({ leads }: { leads: Lead[] }) {
+function LeadsPanel({
+  leads,
+  connected = false,
+  onSaved
+}: {
+  leads: Lead[];
+  connected?: boolean;
+  onSaved?: () => Promise<void>;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftPhone, setDraftPhone] = useState("");
+  const [draftStatus, setDraftStatus] = useState<LeadStatus>("new");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+
+  function startEdit(lead: Lead) {
+    setEditingId(lead.id);
+    setDraftPhone(lead.phone ?? "");
+    setDraftStatus(lead.status);
+    setMessage("");
+  }
+
+  async function save(lead: Lead) {
+    setBusyId(lead.id);
+    try {
+      const response = await fetch("/api/leads", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: lead.id, phone: draftPhone, status: draftStatus })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setMessage(payload?.error ?? "تعذر حفظ التعديل.");
+        return;
+      }
+      setEditingId(null);
+      setMessage(payload.message ?? "تم حفظ التعديل.");
+      await onSaved?.();
+    } catch {
+      setMessage("تعذر الاتصال بالخادم. حاول مرة أخرى.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(lead: Lead) {
+    // The post comes back on the next run if it is still in the group, so say
+    // what deleting does and does not do before doing it.
+    const confirmed = window.confirm(
+      `حذف هذا الإعلان من القائمة؟\n\n${lead.postText.slice(0, 80)}…\n\nلن يمنع ذلك ظهوره مجدداً إن كان ما زال منشوراً في المجموعة.`
+    );
+    if (!confirmed) return;
+
+    setBusyId(lead.id);
+    try {
+      const response = await fetch(`/api/leads?id=${encodeURIComponent(lead.id)}`, { method: "DELETE" });
+      const payload = await response.json();
+      setMessage(response.ok ? payload.message ?? "تم الحذف." : payload?.error ?? "تعذر الحذف.");
+      if (response.ok) await onSaved?.();
+    } catch {
+      setMessage("تعذر الاتصال بالخادم. حاول مرة أخرى.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
-    <Panel title="نتائج الرصد" subtitle="كل منشور مناسب يتحول إلى Lead مع نص تعليق مقترح وحالة متابعة.">
+    <Panel
+      title="نتائج الرصد"
+      subtitle={
+        leads.length > 0
+          ? `${leads.length} إعلاناً، الأحدث أولاً.`
+          : "لم يُسجَّل أي إعلان بعد."
+      }
+    >
+      {message && <div className="notice">{message}</div>}
       <div className="tableWrap">
         <table>
           <thead>
             <tr>
+              <th>#</th>
               <th>الحساب</th>
               <th>المجموعة</th>
               <th>الهاتف والمنشور</th>
               <th>النص</th>
               <th>الثقة</th>
               <th>الحالة</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {leads.map((lead) => (
-              <tr key={lead.id}>
-                <td>
-                  <strong>{lead.authorName}</strong>
-                  <div className="muted">{lead.officeName ?? "حساب فردي أو غير مؤكد"}</div>
-                </td>
-                <td>{lead.groupName}</td>
-                <td>
-                  {lead.phone ? (
-                    <div>
-                      <strong>{lead.phone}</strong>
+            {leads.map((lead, index) => {
+              const editing = editingId === lead.id;
+              const busy = busyId === lead.id;
+
+              return (
+                <tr key={lead.id}>
+                  <td className="muted">{index + 1}</td>
+                  <td>
+                    <strong>{lead.authorName}</strong>
+                    <div className="muted">{lead.officeName ?? "حساب فردي أو غير مؤكد"}</div>
+                  </td>
+                  <td>{lead.groupName}</td>
+                  <td>
+                    {editing ? (
+                      <input
+                        onChange={(event) => setDraftPhone(event.target.value)}
+                        placeholder="رقم الهاتف"
+                        value={draftPhone}
+                      />
+                    ) : lead.phone ? (
+                      <div>
+                        <strong>{lead.phone}</strong>
+                      </div>
+                    ) : (
+                      <div className="muted">بدون رقم</div>
+                    )}
+                    <div className="muted">{leadDate(lead)}</div>
+                    <a href={lead.postUrl} rel="noreferrer" target="_blank">
+                      <ExternalLink size={14} /> المنشور
+                    </a>
+                  </td>
+                  <td className="leadText">{lead.postText}</td>
+                  <td>
+                    <div className="progress">
+                      <span style={{ width: `${lead.confidence}%` }} />
                     </div>
-                  ) : (
-                    <div className="muted">بدون رقم</div>
-                  )}
-                  <div className="muted">{leadDate(lead)}</div>
-                  <a href={lead.postUrl} rel="noreferrer" target="_blank">
-                    <ExternalLink size={14} /> المنشور
-                  </a>
-                </td>
-                <td className="leadText">{lead.postText}</td>
-                <td>
-                  <div className="progress">
-                    <span style={{ width: `${lead.confidence}%` }} />
-                  </div>
-                  <div className="muted">{lead.confidence}%</div>
-                </td>
-                <td>
-                  <span className={statusClass(lead.status)}>{statusLabel(lead.status)}</span>
-                </td>
-              </tr>
-            ))}
+                    <div className="muted">{lead.confidence}%</div>
+                  </td>
+                  <td>
+                    {editing ? (
+                      <select
+                        onChange={(event) => setDraftStatus(event.target.value as LeadStatus)}
+                        value={draftStatus}
+                      >
+                        <option value="new">جديد</option>
+                        <option value="comment_ready">تعليق جاهز</option>
+                        <option value="contacted">تم التواصل</option>
+                        <option value="duplicate">مكرر</option>
+                        <option value="ignored">متجاهل</option>
+                      </select>
+                    ) : (
+                      <span className={statusClass(lead.status)}>{statusLabel(lead.status)}</span>
+                    )}
+                  </td>
+                  <td>
+                    <div className="rowActions">
+                      {editing ? (
+                        <>
+                          <button disabled={busy} onClick={() => save(lead)} title="حفظ" type="button">
+                            <Check size={16} />
+                          </button>
+                          <button
+                            disabled={busy}
+                            onClick={() => setEditingId(null)}
+                            title="إلغاء"
+                            type="button"
+                          >
+                            <X size={16} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            disabled={!connected || busy}
+                            onClick={() => startEdit(lead)}
+                            title="تعديل"
+                            type="button"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            className="danger"
+                            disabled={!connected || busy}
+                            onClick={() => remove(lead)}
+                            title="حذف"
+                            type="button"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {leads.length === 0 && (
               <tr>
-                <td className="muted" colSpan={6}>
-                  لا توجد نتائج بعد. الـ Worker لم يسجل أي Lead حتى الآن.
+                <td className="muted" colSpan={8}>
+                  لا توجد نتائج بعد. لم يسجل أي تشغيل إعلاناً حتى الآن.
                 </td>
               </tr>
             )}

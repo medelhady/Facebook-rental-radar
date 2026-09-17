@@ -147,3 +147,79 @@ async function saveLead(request: Request) {
     { status: 201 }
   );
 }
+
+const editableStatuses = ["new", "comment_ready", "contacted", "duplicate", "ignored"];
+
+// Corrections by hand. The parser gets a number wrong often enough that a
+// lead list you cannot fix is a lead list you stop trusting.
+export async function PATCH(request: Request) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return NextResponse.json({ error: "قاعدة البيانات غير مربوطة." }, { status: 503 });
+  }
+
+  const body = (await request.json().catch(() => null)) as
+    | { id?: string; phone?: string; status?: string; suggestedComment?: string }
+    | null;
+
+  const id = body?.id?.trim() ?? "";
+  if (!id) {
+    return NextResponse.json({ error: "حدد الإعلان المطلوب تعديله." }, { status: 400 });
+  }
+
+  const patch: Record<string, string | null> = {};
+
+  if (body?.phone !== undefined) {
+    const phone = body.phone.replace(/[^\d]/g, "");
+    if (phone && (phone.length < 8 || phone.length > 12)) {
+      return NextResponse.json({ error: "رقم الهاتف يجب أن يكون بين 8 و 12 رقماً." }, { status: 400 });
+    }
+    patch.phone = phone || null;
+  }
+
+  if (body?.status !== undefined) {
+    if (!editableStatuses.includes(body.status)) {
+      return NextResponse.json({ error: "حالة غير معروفة." }, { status: 400 });
+    }
+    patch.status = body.status;
+  }
+
+  if (body?.suggestedComment !== undefined) {
+    patch.suggested_comment = body.suggestedComment.trim() || null;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "لا يوجد شيء لتعديله." }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from("facebook_leads")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: "الإعلان غير موجود." }, { status: 404 });
+
+  return NextResponse.json({ lead: mapLead(data as LeadRow, ""), message: "تم حفظ التعديل." });
+}
+
+export async function DELETE(request: Request) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return NextResponse.json({ error: "قاعدة البيانات غير مربوطة." }, { status: 503 });
+  }
+
+  const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
+  if (!id) {
+    return NextResponse.json({ error: "حدد الإعلان المطلوب حذفه." }, { status: 400 });
+  }
+
+  // The unique index on post_url means a deleted post can come back on the
+  // next run. Deleting is for clearing the view, not for blocking a post.
+  const { error } = await supabase.from("facebook_leads").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ deleted: true, message: "تم حذف الإعلان." });
+}

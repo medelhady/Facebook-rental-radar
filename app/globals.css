@@ -510,3 +510,41 @@ th {
     min-width: 640px;
   }
 }
+
+/* Row-level edit and delete controls in the results table. */
+.rowActions {
+  display: flex;
+  gap: 6px;
+}
+
+.rowActions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+}
+
+.rowActions button:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.rowActions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rowActions button.danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.rowActions button.danger:hover:not(:disabled) {
+  background: #fef2f2;
+}
