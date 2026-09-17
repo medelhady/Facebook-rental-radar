@@ -98,7 +98,7 @@ export default function Home() {
 
   const parsedSample = useMemo(() => {
     const phone = extractPhone(sampleText);
-    const price = extractPrice(sampleText);
+    const price = extractPrice(sampleText, phone);
     const location = extractLocation(sampleText, locationWords);
     const officeName = inferOfficeName("اسم الحساب التجريبي", sampleText);
     return {

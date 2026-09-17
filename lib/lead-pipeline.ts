@@ -44,8 +44,9 @@ export function buildLeadDraft(input: {
     .filter((keyword) => keyword.type === "exclude" && postText.includes(keyword.value))
     .map((keyword) => keyword.value);
 
-  const phone = pick(overrides?.phone, extractPhone(postText));
-  const price = pick(overrides?.price, extractPrice(postText));
+  const detectedPhone = extractPhone(postText);
+  const phone = pick(overrides?.phone, detectedPhone);
+  const price = pick(overrides?.price, extractPrice(postText, detectedPhone));
   const location = pick(overrides?.location, extractLocation(postText, locationWords));
   const officeName = pick(overrides?.officeName, inferOfficeName(authorName, postText));
 
