@@ -23,7 +23,8 @@ Open `http://localhost:3000`.
 
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in the SQL editor, then `supabase/apify-collection.sql`
-   (as two separate queries — see the note at the top of that file).
+   (as two separate queries — see the note at the top of that file), then
+   `supabase/apify-tasks.sql`.
 3. Copy `.env.example` to `.env.local`.
 4. Fill `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
 5. Restart the dev server.
@@ -45,6 +46,26 @@ Push this folder to GitHub and import it in Vercel. Add the same environment var
 
 Collection runs on the Apify actor `curious_coder/facebook-post-scraper`, driven from the
 `وقت البحث` screen so the Apify console is only needed once.
+
+### Several Facebook accounts
+
+Each Facebook account is one Apify **Task** holding that account's cookies, and
+`apify_tasks` in Supabase lists them. Every group names the account that reads it,
+so the sync sends each task only its own groups. Two tasks on the same group cost
+twice and gain nothing — the unique index on `post_url` drops the second copy.
+
+Adding an account from the dashboard also adds it to the Apify schedule, and
+pausing or deleting it takes it back out, so a paused account stops costing money.
+The schedule's action list is read and merged rather than overwritten: anything in
+it that the dashboard did not put there is left alone.
+
+All tasks must sit under the one Apify account in `APIFY_TOKEN`. Tokens stay in the
+environment and are deliberately not stored in Supabase, because the API routes
+have no login yet and anyone with the URL could read them back.
+
+Run the accounts on **different proxy sessions**. Facebook links accounts by IP and
+fingerprint, and two scraper accounts leaving from the same residential address get
+flagged together rather than one at a time.
 
 ### One-time setup in the Apify console
 

@@ -6,10 +6,12 @@ import {
   leads as demoLeads
 } from "@/lib/demo-data";
 import {
+  mapApifyTask,
   mapGroup,
   mapKeyword,
   mapLead,
   mapTemplate,
+  type ApifyTaskRow,
   type GroupRow,
   type KeywordRow,
   type LeadRow,
@@ -46,7 +48,8 @@ async function loadDashboardData() {
       groups: demoGroups,
       keywords: demoKeywords,
       commentTemplates: demoTemplates,
-      leads: demoLeads
+      leads: demoLeads,
+      apifyTasks: []
     });
   }
 
@@ -56,6 +59,13 @@ async function loadDashboardData() {
     supabase.from("comment_templates").select("*").order("created_at", { ascending: true }),
     supabase.from("facebook_leads").select("*").order("first_seen_at", { ascending: false }).limit(200)
   ]);
+
+  // Optional until supabase/apify-tasks.sql has been run, so its error is not
+  // allowed to blank the whole dashboard.
+  const tasksRes = await supabase
+    .from("apify_tasks")
+    .select("*")
+    .order("created_at", { ascending: true });
 
   const failed = [groupsRes, keywordsRes, templatesRes, leadsRes].find((result) => result.error);
   if (failed?.error) {
@@ -77,6 +87,7 @@ async function loadDashboardData() {
     groups: groupRows.map((row) => mapGroup(row, newPerGroup.get(row.id) ?? 0)),
     keywords: ((keywordsRes.data ?? []) as KeywordRow[]).map(mapKeyword),
     commentTemplates: ((templatesRes.data ?? []) as TemplateRow[]).map(mapTemplate),
-    leads: leadRows.map((row) => mapLead(row, groupNames.get(row.group_id ?? "") ?? "غير محددة"))
+    leads: leadRows.map((row) => mapLead(row, groupNames.get(row.group_id ?? "") ?? "غير محددة")),
+    apifyTasks: ((tasksRes.data ?? []) as ApifyTaskRow[]).map(mapApifyTask)
   });
 }

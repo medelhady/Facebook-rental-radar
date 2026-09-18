@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   Clock,
   Database,
+  Users,
   ExternalLink,
   FileSearch,
   MessageSquare,
@@ -22,7 +23,14 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { commentTemplates, groups, keywords, leads } from "@/lib/demo-data";
-import type { CommentTemplate, FacebookGroup, Keyword, Lead, LeadStatus } from "@/lib/types";
+import type {
+  ApifyTask,
+  CommentTemplate,
+  FacebookGroup,
+  Keyword,
+  Lead,
+  LeadStatus
+} from "@/lib/types";
 import { buildLeadDraft, type LeadFields } from "@/lib/lead-pipeline";
 import {
   createDuplicateHash,
@@ -50,6 +58,7 @@ type View =
 
 type RadarData = {
   source: "demo" | "supabase";
+  apifyTasks: ApifyTask[];
   groups: FacebookGroup[];
   keywords: Keyword[];
   commentTemplates: CommentTemplate[];
@@ -58,6 +67,7 @@ type RadarData = {
 
 const demoData: RadarData = {
   source: "demo",
+  apifyTasks: [],
   groups,
   keywords,
   commentTemplates,
@@ -200,7 +210,7 @@ export default function Home() {
         {activeView === "dashboard" && (
           <section className="contentGrid">
             <div>
-              <GroupsPanel connected={connected} groups={data.groups} onSaved={refresh} />
+              <GroupsPanel apifyTasks={data.apifyTasks} connected={connected} groups={data.groups} onSaved={refresh} />
               <LeadsPanel connected={connected} leads={data.leads} onSaved={refresh} />
             </div>
             <div>
@@ -217,7 +227,7 @@ export default function Home() {
         )}
 
         {activeView === "groups" && (
-          <GroupsPanel connected={connected} groups={data.groups} onSaved={refresh} />
+          <GroupsPanel apifyTasks={data.apifyTasks} connected={connected} groups={data.groups} onSaved={refresh} />
         )}
         {activeView === "keywords" && (
           <KeywordsPanel connected={connected} expanded keywords={data.keywords} onSaved={refresh} />
@@ -235,7 +245,12 @@ export default function Home() {
         {activeView === "comments" && (
           <CommentsPanel connected={connected} expanded onSaved={refresh} templates={data.commentTemplates} />
         )}
-        {activeView === "schedule" && <SchedulePanel connected={connected} />}
+        {activeView === "schedule" && (
+          <>
+            <TasksPanel apifyTasks={data.apifyTasks} connected={connected} onSaved={refresh} />
+            <SchedulePanel connected={connected} />
+          </>
+        )}
         {activeView === "settings" && (
           <section className="contentGrid">
             <ParserPanel parsedSample={parsedSample} sampleText={sampleText} setSampleText={setSampleText} />
@@ -281,10 +296,12 @@ function Stats({
 }
 
 function GroupsPanel({
+  apifyTasks = [],
   connected,
   groups,
   onSaved
 }: {
+  apifyTasks?: ApifyTask[];
   connected: boolean;
   groups: FacebookGroup[];
   onSaved: () => Promise<void>;
@@ -292,6 +309,9 @@ function GroupsPanel({
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [location, setLocation] = useState("");
+  const [apifyTaskId, setApifyTaskId] = useState("");
+  // A group with no account is stored but never sent to Apify.
+  const taskLabels = new Map(apifyTasks.map((task) => [task.id, task.label]));
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -308,7 +328,7 @@ function GroupsPanel({
       const response = await fetch("/api/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, url, location })
+        body: JSON.stringify({ name, url, location, apifyTaskId: apifyTaskId || undefined })
       });
       const payload = await response.json();
 
@@ -353,10 +373,28 @@ function GroupsPanel({
           <label>المدينة</label>
           <input
             onChange={(event) => setLocation(event.target.value)}
-            placeholder="مثال: الرياض"
+            placeholder="مثال: نواكشوط"
             value={location}
           />
         </div>
+        {apifyTasks.length > 0 && (
+          <div className="field">
+            <label>يقرأها حساب</label>
+            <select
+              onChange={(event) => setApifyTaskId(event.target.value)}
+              value={apifyTaskId}
+            >
+              <option value="">اختر الحساب…</option>
+              {apifyTasks
+                .filter((task) => task.isActive)
+                .map((task) => (
+                  <option key={task.id} value={task.id}>
+                    {task.label}
+                  </option>
+                ))}
+            </select>
+          </div>
+        )}
         <button className="button" disabled={saving} onClick={handleAddGroup} type="button">
           <Plus size={18} />
           {saving ? "جاري الحفظ..." : "حفظ"}
@@ -368,6 +406,7 @@ function GroupsPanel({
           <thead>
             <tr>
               <th>المجموعة</th>
+              <th>الحساب</th>
               <th>المدينة</th>
               <th>الحالة</th>
               <th>آخر فحص</th>
@@ -379,6 +418,9 @@ function GroupsPanel({
             {groups.map((group) => (
               <tr key={group.id}>
                 <td>{group.name}</td>
+                <td className="muted">
+                  {group.apifyTaskId ? taskLabels.get(group.apifyTaskId) ?? "محذوف" : "بلا حساب"}
+                </td>
                 <td>{group.location ?? "-"}</td>
                 <td>
                   <span className={`badge ${group.status === "active" ? "green" : "amber"}`}>
@@ -828,6 +870,167 @@ function NextStepPanel() {
   );
 }
 
+function TasksPanel({
+  apifyTasks,
+  connected,
+  onSaved
+}: {
+  apifyTasks: ApifyTask[];
+  connected: boolean;
+  onSaved: () => Promise<void>;
+}) {
+  const [label, setLabel] = useState("");
+  const [taskId, setTaskId] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function send(url: string, init: RequestInit) {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(url, init);
+      const payload = await response.json();
+      if (!response.ok) {
+        setMessage(payload?.error ?? "تعذر تنفيذ الطلب.");
+        return false;
+      }
+      setMessage(payload.warning ?? payload.message ?? "تم.");
+      await onSaved();
+      return true;
+    } catch {
+      setMessage("تعذر الاتصال بالخادم.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function add() {
+    const ok = await send("/api/apify-tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, taskId })
+    });
+    if (ok) {
+      setLabel("");
+      setTaskId("");
+    }
+  }
+
+  async function remove(task: ApifyTask) {
+    const confirmed = window.confirm(
+      `حذف «${task.label}»؟
+
+مجموعاته ستبقى محفوظة لكن بلا حساب يقرأها، ولن تُرسل لـ Apify حتى تُسند لحساب آخر.
+
+لن يُحذف الـ Task من Apify نفسه.`
+    );
+    if (!confirmed) return;
+    await send(`/api/apify-tasks?id=${encodeURIComponent(task.id)}`, { method: "DELETE" });
+  }
+
+  return (
+    <Panel
+      title="حسابات الجمع"
+      subtitle="كل حساب هو Task في Apify بكوكيز فيسبوك خاصة به."
+    >
+      {message && <div className="notice">{message}</div>}
+
+      <div className="formGrid">
+        <div className="field">
+          <label>اسم الحساب</label>
+          <input
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="مثال: الحساب الثاني"
+            value={label}
+          />
+        </div>
+        <div className="field">
+          <label>Task ID من Apify</label>
+          <input
+            onChange={(event) => setTaskId(event.target.value)}
+            placeholder="user~task-name"
+            value={taskId}
+          />
+        </div>
+        <button className="button" disabled={busy || !connected} onClick={add} type="button">
+          <Plus size={18} />
+          {busy ? "جاري..." : "إضافة حساب"}
+        </button>
+      </div>
+
+      <div className="tableWrap" style={{ marginTop: 18 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>الحساب</th>
+              <th>Task</th>
+              <th>آخر مزامنة</th>
+              <th>الحالة</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {apifyTasks.map((task) => (
+              <tr key={task.id}>
+                <td>
+                  <strong>{task.label}</strong>
+                  {task.lastError && <div className="muted">{task.lastError}</div>}
+                </td>
+                <td>
+                  <code>{task.taskId}</code>
+                </td>
+                <td className="muted">
+                  {task.lastSyncedAt ? dateFormatter.format(new Date(task.lastSyncedAt)) : "-"}
+                </td>
+                <td>
+                  <span className={task.isActive ? "badge green" : "badge"}>
+                    {task.isActive ? "مفعل" : "موقوف"}
+                  </span>
+                </td>
+                <td>
+                  <div className="rowActions">
+                    <button
+                      disabled={busy || !connected}
+                      onClick={() =>
+                        send("/api/apify-tasks", {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ id: task.id, isActive: !task.isActive })
+                        })
+                      }
+                      title={task.isActive ? "إيقاف" : "تفعيل"}
+                      type="button"
+                    >
+                      {task.isActive ? <X size={16} /> : <Check size={16} />}
+                    </button>
+                    <button
+                      className="danger"
+                      disabled={busy || !connected}
+                      onClick={() => remove(task)}
+                      title="حذف"
+                      type="button"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {apifyTasks.length === 0 && (
+              <tr>
+                <td className="muted" colSpan={5}>
+                  لا يوجد أي حساب بعد. نفّذ supabase/apify-tasks.sql ثم أضف الحساب الأول.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
 function SchedulePanel({ connected }: { connected: boolean }) {
   const [intervalHours, setIntervalHours] = useState(6);
   const [allowed, setAllowed] = useState<number[]>([1, 2, 3, 4, 6, 8, 12, 24]);
@@ -839,12 +1042,15 @@ function SchedulePanel({ connected }: { connected: boolean }) {
   const [candidatesError, setCandidatesError] = useState("");
   const [resultsLimit, setResultsLimit] = useState(100);
   const [maxLimit, setMaxLimit] = useState(1000);
-  const [task, setTask] = useState<{
-    urlKey: string;
-    groupCount: number;
-    limitKey: string | null;
-    resultsLimit: number | null;
-  } | null>(null);
+  const [overviews, setOverviews] = useState<
+    Array<{
+      taskId: string;
+      urlKey: string;
+      groupCount: number;
+      limitKey: string | null;
+      resultsLimit: number | null;
+    }>
+  >([]);
   const [taskError, setTaskError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -864,9 +1070,12 @@ function SchedulePanel({ connected }: { connected: boolean }) {
         setCandidates(payload.candidates ?? []);
         setCandidatesError(payload.candidatesError ?? "");
         setMaxLimit(payload.maxResultsLimit ?? 1000);
-        setTask(payload.task ?? null);
+        setOverviews(payload.overviews ?? []);
         setTaskError(payload.taskError ?? "");
-        if (payload.task?.resultsLimit) setResultsLimit(payload.task.resultsLimit);
+        const seen = (payload.overviews ?? []).find(
+          (item: { resultsLimit: number | null }) => item.resultsLimit
+        );
+        if (seen?.resultsLimit) setResultsLimit(seen.resultsLimit);
       } catch {
         /* the notice below already covers a disconnected dashboard */
       }
@@ -971,20 +1180,23 @@ function SchedulePanel({ connected }: { connected: boolean }) {
 
       {taskError && <div className="notice">{taskError}</div>}
 
-      {task && (
+      {overviews.length > 0 && (
         <div className="commentBox" style={{ display: "block" }}>
-          <strong>إعدادات الـ Task الحالية في Apify</strong>
-          <div className="muted" style={{ marginTop: 6 }}>
-            المجموعات المرسلة: {task.groupCount} · حقل الروابط: <code>{task.urlKey}</code>
-            {task.limitKey ? (
-              <>
-                {" "}
-                · حد النتائج: <code>{task.limitKey}</code> = {task.resultsLimit}
-              </>
-            ) : (
-              " · لا يوجد حد نتائج محفوظ بعد — أول حفظ سينشئه"
-            )}
-          </div>
+          <strong>ما هو مضبوط فعلياً في Apify الآن</strong>
+          {overviews.map((item) => (
+            <div className="muted" key={item.taskId} style={{ marginTop: 6 }}>
+              <code>{item.taskId}</code> — المجموعات المرسلة: {item.groupCount} · حقل الروابط:{" "}
+              <code>{item.urlKey}</code>
+              {item.limitKey ? (
+                <>
+                  {" "}
+                  · حد النتائج: <code>{item.limitKey}</code> = {item.resultsLimit}
+                </>
+              ) : (
+                " · لا يوجد حد نتائج محفوظ بعد — أول حفظ سينشئه"
+              )}
+            </div>
+          ))}
         </div>
       )}
 

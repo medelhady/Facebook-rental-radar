@@ -1,6 +1,6 @@
 // Server-only wrapper around the Apify REST API.
-// The dashboard drives the saved Task and its Schedule through here so the
-// user never has to open the Apify console after the first setup.
+// The dashboard drives the saved Tasks and the Schedule through here so the
+// Apify console is only needed for the cookies themselves.
 
 const API = "https://api.apify.com/v2";
 
@@ -23,8 +23,9 @@ export function apifyConfigStatus(): ApifyConfigStatus {
     hasScheduleId: clean(process.env.APIFY_SCHEDULE_ID).length > 0
   };
 
+  // APIFY_TASK_ID is no longer required: tasks live in the apify_tasks table,
+  // and the environment value is only a fallback before that table is filled.
   if (!status.hasToken) status.problem = "APIFY_TOKEN غير موجود.";
-  else if (!status.hasTaskId) status.problem = "APIFY_TASK_ID غير موجود.";
   else if (!status.hasScheduleId) status.problem = "APIFY_SCHEDULE_ID غير موجود.";
 
   return status;
@@ -36,13 +37,17 @@ function token() {
   return value;
 }
 
-function taskId() {
-  const value = clean(process.env.APIFY_TASK_ID);
-  if (!value) throw new Error("APIFY_TASK_ID غير موجود في متغيرات البيئة.");
-  // The console shows a task as "user/task-name", but the API path wants
-  // "user~task-name". Copied as shown, the slash turns /actor-tasks/{id}/input
-  // into a different URL and every call comes back 404.
-  return value.replace("/", "~");
+// The console shows a task as "user/task-name", but the API path wants
+// "user~task-name". Copied as shown, the slash turns /actor-tasks/{id}/input
+// into a different URL and every call comes back 404.
+export function normalizeTaskId(value: string) {
+  return clean(value).replace("/", "~");
+}
+
+// Kept for the fallback path: before apify_tasks is filled, the dashboard
+// still drives the single task named in the environment.
+export function envTaskId() {
+  return normalizeTaskId(process.env.APIFY_TASK_ID ?? "");
 }
 
 function scheduleId() {
@@ -76,8 +81,8 @@ async function call(path: string, init?: RequestInit) {
 
 type TaskInput = Record<string, unknown>;
 
-export async function getTaskInput(): Promise<TaskInput> {
-  return ((await call(`/actor-tasks/${taskId()}/input`)) as TaskInput) ?? {};
+export async function getTaskInput(taskId: string): Promise<TaskInput> {
+  return ((await call(`/actor-tasks/${normalizeTaskId(taskId)}/input`)) as TaskInput) ?? {};
 }
 
 // The saved Task holds the Facebook cookies and the proxy config in the same
@@ -95,8 +100,8 @@ export function findUrlKey(input: TaskInput) {
   return "startUrls";
 }
 
-export async function syncApifyGroups(urls: string[]) {
-  const input = await getTaskInput();
+export async function syncApifyGroups(taskId: string, urls: string[]) {
+  const input = await getTaskInput(taskId);
   const key = findUrlKey(input);
   const existing = input[key];
 
@@ -104,9 +109,9 @@ export async function syncApifyGroups(urls: string[]) {
   const plainStrings = Array.isArray(existing) && typeof existing[0] === "string";
   const payload = plainStrings ? urls : urls.map((url) => ({ url }));
 
-  await call(`/actor-tasks/${taskId()}/input`, {
+  await call(`/actor-tasks/${normalizeTaskId(taskId)}/input`, {
     method: "PUT",
-    body: JSON.stringify({ ...input, [key]: payload })
+    body: JSON.stringify({ [key]: payload })
   });
 
   return { key, count: urls.length };
@@ -125,19 +130,21 @@ export function findLimitKey(input: TaskInput) {
 }
 
 export type TaskOverview = {
+  taskId: string;
   urlKey: string;
   groupCount: number;
   limitKey: string | null;
   resultsLimit: number | null;
 };
 
-export async function getTaskOverview(): Promise<TaskOverview> {
-  const input = await getTaskInput();
+export async function getTaskOverview(taskId: string): Promise<TaskOverview> {
+  const input = await getTaskInput(taskId);
   const urlKey = findUrlKey(input);
   const limitKey = findLimitKey(input);
   const urls = input[urlKey];
 
   return {
+    taskId: normalizeTaskId(taskId),
     urlKey,
     groupCount: Array.isArray(urls) ? urls.length : 0,
     limitKey,
@@ -147,16 +154,16 @@ export async function getTaskOverview(): Promise<TaskOverview> {
 
 export const MAX_RESULTS_LIMIT = 1000;
 
-export async function syncApifyResultsLimit(limit: number) {
+export async function syncApifyResultsLimit(taskId: string, limit: number) {
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_RESULTS_LIMIT) {
     throw new Error(`عدد النتائج يجب أن يكون رقماً بين 1 و ${MAX_RESULTS_LIMIT}.`);
   }
 
-  const input = await getTaskInput();
+  const input = await getTaskInput(taskId);
   // Falls back to the Apify convention when the task has never carried a cap.
   const key = findLimitKey(input) ?? "resultsLimit";
 
-  await call(`/actor-tasks/${taskId()}/input`, {
+  await call(`/actor-tasks/${normalizeTaskId(taskId)}/input`, {
     method: "PUT",
     body: JSON.stringify({ [key]: limit })
   });
@@ -184,6 +191,43 @@ export async function syncApifySchedule(intervalHours: number) {
   return cron;
 }
 
+type ScheduleAction = Record<string, any>;
+
+async function getScheduleActions(): Promise<ScheduleAction[]> {
+  const data = (await call(`/schedules/${scheduleId()}`)) as {
+    data?: { actions?: ScheduleAction[] };
+  } | null;
+  return data?.data?.actions ?? [];
+}
+
+// Sending `actions` replaces the whole array, so it is always read first and
+// merged. Anything in the schedule that the dashboard did not put there stays.
+async function putScheduleActions(actions: ScheduleAction[]) {
+  await call(`/schedules/${scheduleId()}`, {
+    method: "PUT",
+    body: JSON.stringify({ actions })
+  });
+}
+
+export async function addTaskToSchedule(taskId: string) {
+  const id = normalizeTaskId(taskId);
+  const actions = await getScheduleActions();
+  if (actions.some((action) => action.actorTaskId === id)) return { added: false };
+
+  await putScheduleActions([...actions, { type: "RUN_ACTOR_TASK", actorTaskId: id }]);
+  return { added: true };
+}
+
+export async function removeTaskFromSchedule(taskId: string) {
+  const id = normalizeTaskId(taskId);
+  const actions = await getScheduleActions();
+  const remaining = actions.filter((action) => action.actorTaskId !== id);
+  if (remaining.length === actions.length) return { removed: false };
+
+  await putScheduleActions(remaining);
+  return { removed: true };
+}
+
 export type ScheduleSummary = {
   id: string;
   name: string;
@@ -203,7 +247,7 @@ export async function listSchedules(): Promise<ScheduleSummary[]> {
   return (data?.data?.items ?? []).map((item) => {
     // A schedule can hold several actions and starts all of them together, so
     // reading only the first hides an Actor sitting behind a correct Task.
-    const actions = (item.actions ?? []) as Array<Record<string, any>>;
+    const actions = (item.actions ?? []) as ScheduleAction[];
     return {
       id: String(item.id ?? ""),
       name: String(item.name ?? ""),

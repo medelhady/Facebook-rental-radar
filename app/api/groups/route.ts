@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { pushActiveGroups } from "@/lib/apify-sync";
+import { describeSync, pushActiveGroups } from "@/lib/apify-sync";
 import { mapGroup, type GroupRow } from "@/lib/mappers";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -24,12 +24,13 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => null)) as
-    | { name?: string; url?: string; location?: string }
+    | { name?: string; url?: string; location?: string; apifyTaskId?: string }
     | null;
 
   const name = body?.name?.trim() ?? "";
   const url = normalizeFacebookUrl(body?.url ?? "");
   const location = body?.location?.trim() || null;
+  const apifyTaskId = body?.apifyTaskId?.trim() || null;
 
   if (!name || !url) {
     return NextResponse.json({ error: "اكتب اسم المجموعة ورابط صحيح يبدأ بـ https://" }, { status: 400 });
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase
     .from("facebook_groups")
-    .insert({ name, url, location })
+    .insert({ name, url, location, apify_task_id: apifyTaskId })
     .select("*")
     .single();
 
@@ -56,7 +57,9 @@ export async function POST(request: Request) {
   // warning, not an error, so the row is not lost over a bad token.
   let warning: string | undefined;
   try {
-    await pushActiveGroups();
+    const results = await pushActiveGroups();
+    const failed = results.filter((result) => result.error);
+    if (failed.length > 0) warning = describeSync(failed);
   } catch (syncError) {
     warning = syncError instanceof Error ? syncError.message : "تعذر تحديث قائمة المجموعات في Apify.";
   }
@@ -83,7 +86,9 @@ export async function DELETE(request: Request) {
 
   let warning: string | undefined;
   try {
-    await pushActiveGroups();
+    const results = await pushActiveGroups();
+    const failed = results.filter((result) => result.error);
+    if (failed.length > 0) warning = describeSync(failed);
   } catch (syncError) {
     warning = syncError instanceof Error ? syncError.message : "تعذر تحديث قائمة المجموعات في Apify.";
   }

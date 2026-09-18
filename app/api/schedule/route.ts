@@ -3,6 +3,7 @@ import {
   ALLOWED_INTERVALS,
   apifyConfigStatus,
   cronForInterval,
+  envTaskId,
   getTaskOverview,
   listSchedules,
   MAX_RESULTS_LIMIT,
@@ -11,10 +12,31 @@ import {
   type ScheduleSummary,
   type TaskOverview
 } from "@/lib/apify";
+import { mapApifyTask, type ApifyTaskRow } from "@/lib/mappers";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
+
+type Supabase = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
+
+// The apify_tasks table is the source of truth once it exists. Before the
+// migration runs, the single task named in the environment stands in for it so
+// a half-migrated deployment keeps working.
+async function activeTaskIds(supabase: Supabase) {
+  const { data, error } = await supabase
+    .from("apify_tasks")
+    .select("task_id")
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+
+  if (error || !data || data.length === 0) {
+    const fallback = envTaskId();
+    return fallback ? [fallback] : [];
+  }
+
+  return (data as Array<{ task_id: string }>).map((row) => row.task_id);
+}
 
 export async function GET() {
   const supabase = getSupabaseAdmin();
@@ -50,15 +72,22 @@ export async function GET() {
     }
   }
 
-  // The task is the single source of truth for the cap and the group count,
-  // so it is read live rather than mirrored into Supabase and drifting.
-  let task: TaskOverview | null = null;
+  const { data: taskRows } = await supabase
+    .from("apify_tasks")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  // Each task is read live from Apify: the cap and the group count belong to
+  // the task, and mirroring them into Supabase only lets the two drift.
+  const overviews: TaskOverview[] = [];
   let taskError: string | null = null;
-  if (apify.hasToken && apify.hasTaskId) {
-    try {
-      task = await getTaskOverview();
-    } catch (readError) {
-      taskError = readError instanceof Error ? readError.message : "تعذر قراءة إعدادات الـ Task.";
+  if (apify.hasToken) {
+    for (const id of await activeTaskIds(supabase)) {
+      try {
+        overviews.push(await getTaskOverview(id));
+      } catch (readError) {
+        taskError = `${id}: ${readError instanceof Error ? readError.message : "تعذر القراءة"}`;
+      }
     }
   }
 
@@ -71,7 +100,8 @@ export async function GET() {
     apify,
     candidates,
     candidatesError,
-    task,
+    tasks: ((taskRows ?? []) as ApifyTaskRow[]).map(mapApifyTask),
+    overviews,
     taskError
   });
 }
@@ -125,15 +155,28 @@ export async function POST(request: Request) {
   }
 
   if (wantsLimit) {
-    try {
-      const result = await syncApifyResultsLimit(Number(body?.resultsLimit));
-      done.push(`${result.limit} نتيجة لكل مجموعة (الحقل ${result.key})`);
-    } catch (error) {
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : "تعذر تحديث عدد النتائج." },
-        { status: 502 }
-      );
+    const ids = await activeTaskIds(supabase);
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "لا يوجد أي حساب مفعّل لتطبيق العدد عليه." }, { status: 400 });
     }
+
+    // The cap is per run, so every active account gets the same one. A failure
+    // on one account is reported rather than silently leaving it behind.
+    const failures: string[] = [];
+    for (const id of ids) {
+      try {
+        await syncApifyResultsLimit(id, Number(body?.resultsLimit));
+      } catch (error) {
+        failures.push(`${id}: ${error instanceof Error ? error.message : "تعذر التحديث"}`);
+      }
+    }
+
+    if (failures.length === ids.length) {
+      return NextResponse.json({ error: failures.join(" · ") }, { status: 502 });
+    }
+
+    done.push(`${Number(body?.resultsLimit)} نتيجة لكل مجموعة على ${ids.length - failures.length} حساب`);
+    if (failures.length > 0) done.push(`لم ينجح: ${failures.join(" · ")}`);
   }
 
   return NextResponse.json({ cron, message: `تم الحفظ: ${done.join("، ")}.` });

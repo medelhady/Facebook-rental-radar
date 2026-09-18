@@ -1,4 +1,5 @@
 import type {
+  ApifyTask,
   CommentTemplate,
   FacebookGroup,
   Keyword,
@@ -9,10 +10,20 @@ import type {
   SourceStatus
 } from "./types";
 
+export type ApifyTaskRow = {
+  id: string;
+  label: string;
+  task_id: string;
+  is_active: boolean;
+  last_synced_at: string | null;
+  last_error: string | null;
+};
+
 export type GroupRow = {
   id: string;
   name: string;
   url: string;
+  apify_task_id?: string | null;
   location: string | null;
   status: SourceStatus;
   last_checked_at: string | null;
@@ -57,11 +68,23 @@ export function mapGroup(row: GroupRow, newPosts = 0): FacebookGroup {
     id: row.id,
     name: row.name,
     url: row.url,
+    apifyTaskId: row.apify_task_id ?? undefined,
     location: row.location ?? undefined,
     status: row.status,
     lastCheckedAt: row.last_checked_at ?? undefined,
     newPosts,
     error: row.last_error ?? undefined
+  };
+}
+
+export function mapApifyTask(row: ApifyTaskRow): ApifyTask {
+  return {
+    id: row.id,
+    label: row.label,
+    taskId: row.task_id,
+    isActive: row.is_active,
+    lastSyncedAt: row.last_synced_at ?? undefined,
+    lastError: row.last_error ?? undefined
   };
 }
 

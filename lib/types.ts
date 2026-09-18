@@ -3,10 +3,20 @@ export type LeadStatus = "new" | "comment_ready" | "contacted" | "duplicate" | "
 export type KeywordType = "include" | "exclude" | "location" | "rent" | "sale";
 export type OfferType = "rent" | "sale" | "unknown";
 
+export type ApifyTask = {
+  id: string;
+  label: string;
+  taskId: string;
+  isActive: boolean;
+  lastSyncedAt?: string;
+  lastError?: string;
+};
+
 export type FacebookGroup = {
   id: string;
   name: string;
   url: string;
+  apifyTaskId?: string;
   location?: string;
   status: SourceStatus;
   lastCheckedAt?: string;
