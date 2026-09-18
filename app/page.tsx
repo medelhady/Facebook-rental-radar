@@ -6,6 +6,7 @@ import {
   Clock,
   Database,
   KeyRound,
+  LogOut,
   Users,
   ExternalLink,
   FileSearch,
@@ -178,6 +179,17 @@ export default function Home() {
             );
           })}
         </nav>
+        <button
+          className="navItem"
+          onClick={async () => {
+            await fetch("/api/login", { method: "DELETE" });
+            window.location.href = "/login";
+          }}
+          type="button"
+        >
+          <LogOut size={18} />
+          خروج
+        </button>
       </aside>
 
       <main className="main">
@@ -888,9 +900,6 @@ function TasksPanel({
   const [cookieFor, setCookieFor] = useState<ApifyTask | null>(null);
   const [cookieText, setCookieText] = useState("");
   const [cookieStatus, setCookieStatus] = useState<CookieStatus | null>(null);
-  // Kept for this browser tab only. It is a shared password, not a session,
-  // and writing it to localStorage would leave it on the machine.
-  const [adminToken, setAdminToken] = useState("");
 
   async function openCookies(task: ApifyTask) {
     setCookieFor(task);
@@ -916,7 +925,7 @@ function TasksPanel({
     try {
       const response = await fetch("/api/apify-cookies", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ taskRowId: cookieFor.id, cookies: cookieText })
       });
       const payload = await response.json();
@@ -1118,15 +1127,6 @@ function TasksPanel({
             />
           </div>
 
-          <div className="field" style={{ marginTop: 10 }}>
-            <label>كلمة مرور الإدارة (إن ضُبط ADMIN_TOKEN)</label>
-            <input
-              onChange={(event) => setAdminToken(event.target.value)}
-              type="password"
-              value={adminToken}
-            />
-          </div>
-
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button className="button" disabled={busy || !cookieText.trim()} onClick={saveCookies} type="button">
               <KeyRound size={18} />
@@ -1138,8 +1138,8 @@ function TasksPanel({
           </div>
 
           <div className="muted" style={{ marginTop: 10 }}>
-            تُرسل إلى Apify مباشرة ولا تُحفظ في قاعدتك ولا تُعاد عرضها. هذه الصفحة بلا تسجيل
-            دخول، فاضبط ADMIN_TOKEN في فيرسيل قبل استعمالها على الرابط العام.
+            تُرسل إلى Apify مباشرة ولا تُحفظ في قاعدتك ولا تُعاد عرضها — لا يوجد مسار يُرجع
+            القيم.
           </div>
         </div>
       )}

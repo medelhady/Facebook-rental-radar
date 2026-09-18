@@ -33,10 +33,23 @@ Reads and writes go through route handlers under `app/api`, which use the servic
 on the server. The key never reaches the browser. Without these variables the dashboard falls
 back to demo data and shows a warning, and saving is disabled.
 
-### Security note
+### Password
 
-The API routes are not behind a login yet, so anyone who can open the deployed URL can add
-groups, keywords, and templates. Add Supabase admin auth before making the Vercel URL public.
+Set `ADMIN_TOKEN` and the whole dashboard sits behind `/login`: one password, typed once,
+held in an httpOnly signed cookie for two weeks. The cookie carries an expiry and its HMAC,
+never the password, so it cannot be turned back into one.
+
+Left unset, the dashboard stays open to anyone with the URL. That is the old behaviour and
+the default, because locking the owner out of their own deployment over a missing variable
+would be worse than what it guards against.
+
+Two paths stay public on purpose: `/api/apify-webhook`, which Apify calls and cannot log
+in — it carries its own secret and verifies every run against the Apify API — and
+`/api/health`.
+
+This is a door lock, not user accounts: one shared password, no per-user identity, no audit
+of who changed what. Supabase Auth is the step after this, and the schema's `authenticated`
+policies are already written for it.
 
 ## Deployment
 

@@ -5,15 +5,8 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-// This route carries a live Facebook session on its way to Apify, and these
-// routes have no login. Setting ADMIN_TOKEN requires a shared secret on writes;
-// leaving it unset keeps the route open, which is only safe on localhost.
-function unauthorized(request: Request) {
-  const expected = process.env.ADMIN_TOKEN;
-  if (!expected) return null;
-  if (request.headers.get("x-admin-token") === expected) return null;
-  return NextResponse.json({ error: "كلمة مرور الإدارة غير صحيحة." }, { status: 401 });
-}
+// This route carries a live Facebook session on its way to Apify. The
+// middleware turns away anything without a valid session before it gets here.
 
 // Accepts the task by its row id in apify_tasks, and falls back to the
 // environment task so this works before the table is filled.
@@ -53,9 +46,6 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const denied = unauthorized(request);
-  if (denied) return denied;
-
   const body = (await request.json().catch(() => null)) as
     | { taskRowId?: string; cookies?: string }
     | null;
