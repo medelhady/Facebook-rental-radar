@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   Clock,
   Database,
+  KeyRound,
   Users,
   ExternalLink,
   FileSearch,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { commentTemplates, groups, keywords, leads } from "@/lib/demo-data";
+import type { CookieStatus } from "@/lib/apify";
 import type {
   ApifyTask,
   CommentTemplate,
@@ -883,6 +885,56 @@ function TasksPanel({
   const [taskId, setTaskId] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cookieFor, setCookieFor] = useState<ApifyTask | null>(null);
+  const [cookieText, setCookieText] = useState("");
+  const [cookieStatus, setCookieStatus] = useState<CookieStatus | null>(null);
+  // Kept for this browser tab only. It is a shared password, not a session,
+  // and writing it to localStorage would leave it on the machine.
+  const [adminToken, setAdminToken] = useState("");
+
+  async function openCookies(task: ApifyTask) {
+    setCookieFor(task);
+    setCookieText("");
+    setCookieStatus(null);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/apify-cookies?taskRowId=${encodeURIComponent(task.id)}`, {
+        cache: "no-store"
+      });
+      const payload = await response.json();
+      if (response.ok) setCookieStatus(payload.status);
+      else setMessage(payload?.error ?? "تعذر قراءة حالة الكوكيز.");
+    } catch {
+      setMessage("تعذر الاتصال بالخادم.");
+    }
+  }
+
+  async function saveCookies() {
+    if (!cookieFor) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/apify-cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+        body: JSON.stringify({ taskRowId: cookieFor.id, cookies: cookieText })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setMessage(payload?.error ?? "تعذر حفظ الكوكيز.");
+        return;
+      }
+      setCookieStatus(payload.status ?? null);
+      setMessage(payload.warning ?? payload.message ?? "تم.");
+      // The paste leaves the page as soon as it has been sent.
+      setCookieText("");
+    } catch {
+      setMessage("تعذر الاتصال بالخادم.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
 
   async function send(url: string, init: RequestInit) {
     setBusy(true);
@@ -1005,6 +1057,14 @@ function TasksPanel({
                       {task.isActive ? <X size={16} /> : <Check size={16} />}
                     </button>
                     <button
+                      disabled={busy}
+                      onClick={() => openCookies(task)}
+                      title="الكوكيز"
+                      type="button"
+                    >
+                      <KeyRound size={16} />
+                    </button>
+                    <button
                       className="danger"
                       disabled={busy || !connected}
                       onClick={() => remove(task)}
@@ -1027,6 +1087,62 @@ function TasksPanel({
           </tbody>
         </table>
       </div>
+
+      {cookieFor && (
+        <div className="commentBox" style={{ display: "block", marginTop: 18 }}>
+          <strong>كوكيز «{cookieFor.label}»</strong>
+
+          <div className="muted" style={{ marginTop: 6 }}>
+            {cookieStatus === null
+              ? "جاري القراءة…"
+              : cookieStatus.key === null
+              ? "لا توجد كوكيز محفوظة في هذا الـ Task."
+              : `${cookieStatus.count} كوكي · ${
+                  cookieStatus.hasSession ? "الجلسة كاملة" : "⚠ ناقصة c_user أو xs"
+                }${
+                  cookieStatus.daysLeft !== null
+                    ? cookieStatus.daysLeft > 0
+                      ? ` · تنتهي بعد ${cookieStatus.daysLeft} يوماً`
+                      : " · منتهية بالفعل"
+                    : ""
+                }`}
+          </div>
+
+          <div className="field" style={{ marginTop: 12 }}>
+            <label>الصق تصدير الكوكيز (JSON)</label>
+            <textarea
+              onChange={(event) => setCookieText(event.target.value)}
+              placeholder='[{"name":"c_user","value":"…"},{"name":"xs","value":"…"}]'
+              rows={5}
+              value={cookieText}
+            />
+          </div>
+
+          <div className="field" style={{ marginTop: 10 }}>
+            <label>كلمة مرور الإدارة (إن ضُبط ADMIN_TOKEN)</label>
+            <input
+              onChange={(event) => setAdminToken(event.target.value)}
+              type="password"
+              value={adminToken}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button className="button" disabled={busy || !cookieText.trim()} onClick={saveCookies} type="button">
+              <KeyRound size={18} />
+              {busy ? "جاري الحفظ..." : "حفظ الكوكيز"}
+            </button>
+            <button className="button" onClick={() => setCookieFor(null)} type="button">
+              إغلاق
+            </button>
+          </div>
+
+          <div className="muted" style={{ marginTop: 10 }}>
+            تُرسل إلى Apify مباشرة ولا تُحفظ في قاعدتك ولا تُعاد عرضها. هذه الصفحة بلا تسجيل
+            دخول، فاضبط ADMIN_TOKEN في فيرسيل قبل استعمالها على الرابط العام.
+          </div>
+        </div>
+      )}
     </Panel>
   );
 }

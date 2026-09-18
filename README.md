@@ -63,6 +63,22 @@ All tasks must sit under the one Apify account in `APIFY_TOKEN`. Tokens stay in 
 environment and are deliberately not stored in Supabase, because the API routes
 have no login yet and anyone with the URL could read them back.
 
+### Cookies
+
+Each account's cookies can be replaced from the accounts panel: paste the extension's
+JSON export and it goes browser → server → Apify. Nothing is stored in Supabase, and
+reads return only a summary — how many cookies, whether `c_user` and `xs` are both
+present, and when the session expires. There is deliberately no way to read the values
+back out.
+
+That summary is the point as much as the editing is. A run that comes back in six
+seconds with one post is an expired session, and it reports success, so the countdown
+is the difference between noticing today and noticing next week.
+
+This route carries a live Facebook session and the API has no login, so set
+`ADMIN_TOKEN` in the environment before using it on the public URL. Unset, the route
+stays open.
+
 Run the accounts on **different proxy sessions**. Facebook links accounts by IP and
 fingerprint, and two scraper accounts leaving from the same residential address get
 flagged together rather than one at a time.

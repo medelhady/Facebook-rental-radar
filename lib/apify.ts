@@ -117,6 +117,103 @@ export async function syncApifyGroups(taskId: string, urls: string[]) {
   return { key, count: urls.length };
 }
 
+// Cookies are the one input that must never travel back out. Reads return
+// this summary; the values themselves only ever move browser -> server -> Apify.
+export type CookieStatus = {
+  key: string | null;
+  count: number;
+  hasSession: boolean;
+  expiresAt: string | null;
+  daysLeft: number | null;
+};
+
+type CookieEntry = { name?: string; value?: string; expirationDate?: number };
+
+function findCookieKey(input: TaskInput) {
+  for (const [key, value] of Object.entries(input)) {
+    if (Array.isArray(value)) {
+      const first = value[0] as CookieEntry | undefined;
+      if (first && typeof first === "object" && "name" in first && "value" in first) return key;
+    }
+    if (typeof value === "string" && value.includes("c_user")) return key;
+  }
+  return null;
+}
+
+// c_user identifies the account and xs is the session itself. An export that
+// is missing either one authenticates as nobody, and the run comes back in a
+// few seconds with almost nothing rather than with an error.
+const SESSION_COOKIES = ["c_user", "xs"];
+
+export function summarizeCookies(entries: CookieEntry[], key: string | null): CookieStatus {
+  const names = new Set(entries.map((entry) => entry.name));
+  const hasSession = SESSION_COOKIES.every((name) => names.has(name));
+
+  // The session dies with whichever of the essential cookies expires first.
+  const stamps = entries
+    .filter((entry) => entry.name && SESSION_COOKIES.includes(entry.name))
+    .map((entry) => entry.expirationDate)
+    .filter((value): value is number => typeof value === "number" && value > 0);
+
+  const soonest = stamps.length > 0 ? Math.min(...stamps) : null;
+  const expiresAt = soonest ? new Date(soonest * 1000).toISOString() : null;
+  const daysLeft = soonest ? Math.floor((soonest * 1000 - Date.now()) / 86_400_000) : null;
+
+  return { key, count: entries.length, hasSession, expiresAt, daysLeft };
+}
+
+export async function getCookieStatus(taskId: string): Promise<CookieStatus> {
+  const input = await getTaskInput(taskId);
+  const key = findCookieKey(input);
+  if (!key) return { key: null, count: 0, hasSession: false, expiresAt: null, daysLeft: null };
+
+  const raw = input[key];
+  const entries: CookieEntry[] = Array.isArray(raw)
+    ? (raw as CookieEntry[])
+    : parseCookies(String(raw ?? ""));
+
+  return summarizeCookies(entries, key);
+}
+
+export function parseCookies(text: string): CookieEntry[] {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("الصق الكوكيز أولاً.");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error("الكوكيز يجب أن تكون بصيغة JSON كما تصدّرها الإضافة، تبدأ بـ [ وتنتهي بـ ].");
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("الكوكيز يجب أن تكون قائمة غير فارغة.");
+  }
+
+  const entries = parsed as CookieEntry[];
+  if (!entries.every((entry) => entry && typeof entry === "object" && "name" in entry)) {
+    throw new Error("الصيغة غير متوقعة — كل عنصر يجب أن يحمل name و value.");
+  }
+
+  return entries;
+}
+
+export async function syncApifyCookies(taskId: string, text: string) {
+  const entries = parseCookies(text);
+  const input = await getTaskInput(taskId);
+  // Written back under whichever key the task already uses, so the actor keeps
+  // reading the field it expects.
+  const key = findCookieKey(input) ?? "cookies";
+  const asString = typeof input[key] === "string";
+
+  await call(`/actor-tasks/${normalizeTaskId(taskId)}/input`, {
+    method: "PUT",
+    body: JSON.stringify({ [key]: asString ? JSON.stringify(entries) : entries })
+  });
+
+  return summarizeCookies(entries, key);
+}
+
 // Every actor names its cap differently, and the saved task only carries the
 // one its own actor uses. Guessing writes a key nobody reads: the call
 // succeeds, the cap never changes, and nothing says so.
