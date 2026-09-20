@@ -378,12 +378,15 @@ export async function getRecentRuns(taskId: string, limit = 5): Promise<RunSumma
         startedAt,
         seconds,
         itemCount,
+        // The post count alone is the signal. Requiring a short duration as
+        // well let a 21-second run returning one post pass as healthy, which
+        // is the exact case this was written to catch. Duration only stands in
+        // when the count could not be read.
         looksEmpty:
           status === "SUCCEEDED" &&
-          seconds !== null &&
-          seconds < EMPTY_RUN_SECONDS &&
-          itemCount !== null &&
-          itemCount <= EMPTY_RUN_ITEMS
+          (itemCount !== null
+            ? itemCount <= EMPTY_RUN_ITEMS
+            : seconds !== null && seconds < EMPTY_RUN_SECONDS)
       };
     })
   );
