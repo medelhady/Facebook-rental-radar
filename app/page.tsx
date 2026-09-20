@@ -5,8 +5,10 @@ import {
   ClipboardCheck,
   Clock,
   Database,
+  Hash,
   KeyRound,
   LogOut,
+  Phone,
   Play,
   Users,
   ExternalLink,
@@ -341,6 +343,66 @@ export default function Home() {
   );
 }
 
+// Counts settle into place instead of snapping, which makes a refresh that
+// changed nothing visibly different from one that did.
+function useCountUp(value: number, ms = 700) {
+  const [shown, setShown] = useState(value);
+
+  useEffect(() => {
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+    if (reduced || value === 0) {
+      setShown(value);
+      return;
+    }
+
+    const from = 0;
+    const started = performance.now();
+    let frame = 0;
+
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - started) / ms);
+      // Ease out, so it decelerates into the number rather than stopping dead.
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setShown(Math.round(from + (value - from) * eased));
+      if (progress < 1) frame = requestAnimationFrame(step);
+    };
+
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [value, ms]);
+
+  return shown;
+}
+
+function StatCard({
+  accent,
+  icon: Icon,
+  label,
+  value
+}: {
+  accent: string;
+  icon: LucideIcon;
+  label: string;
+  value: number;
+}) {
+  const shown = useCountUp(value);
+
+  return (
+    <div className="stat" style={{ ["--accent" as string]: accent }}>
+      <span className="statIcon">
+        <Icon size={20} />
+      </span>
+      <div>
+        <span>{label}</span>
+        <strong>{shown}</strong>
+      </div>
+    </div>
+  );
+}
+
 function Stats({
   activeGroups,
   leadsCount,
@@ -354,22 +416,11 @@ function Stats({
 }) {
   return (
     <section className="grid">
-      <div className="stat">
-        <span>المجموعات المفعلة</span>
-        <strong>{activeGroups}</strong>
-      </div>
-      <div className="stat">
-        <span>Leads جديدة</span>
-        <strong>{leadsCount}</strong>
-      </div>
-      <div className="stat">
-        <span>Leads فيها أرقام</span>
-        <strong>{phoneLeads}</strong>
-      </div>
-      <div className="stat">
-        <span>تعليقات جاهزة</span>
-        <strong>{readyComments}</strong>
-      </div>
+      <StatCard accent="#2563eb" icon={Database} label="المجموعات المفعلة" value={activeGroups} />
+      {/* Was labelled "جديدة" while counting every lead ever collected. */}
+      <StatCard accent="#7c3aed" icon={Hash} label="إجمالي الإعلانات" value={leadsCount} />
+      <StatCard accent="#15803d" icon={Phone} label="إعلانات فيها أرقام" value={phoneLeads} />
+      <StatCard accent="#a16207" icon={MessageSquare} label="تعليقات جاهزة" value={readyComments} />
     </section>
   );
 }
@@ -429,7 +480,7 @@ function GroupsPanel({
   }
 
   return (
-    <Panel title="روابط مجموعات فيسبوك" subtitle="هذه القائمة هي المصادر التي سيقرأ منها الـ Worker كل 6 ساعات.">
+    <Panel title="روابط مجموعات فيسبوك" icon={Database} subtitle="المصادر التي يمر عليها الجمع في كل تشغيل.">
       <div className="formGrid">
         <div className="field">
           <label>اسم المجموعة</label>
@@ -599,6 +650,7 @@ function LeadsPanel({
 
   return (
     <Panel
+      icon={FileSearch}
       title="نتائج الرصد"
       subtitle={
         leads.length > 0
@@ -781,7 +833,7 @@ function KeywordsPanel({
   }
 
   return (
-    <Panel title="قاموس الكلمات" subtitle="الكلمات التي تحدد هل المنشور يستحق المتابعة.">
+    <Panel title="قاموس الكلمات" icon={Search} subtitle="الكلمات التي تحدد هل المنشور يستحق المتابعة.">
       {expanded && (
         <div className="formGrid" style={{ marginBottom: 16 }}>
           <div className="field">
@@ -810,11 +862,16 @@ function KeywordsPanel({
       )}
       {expanded && message && <div className="notice">{message}</div>}
       <div className="chips">
-        {keywords.map((keyword) => (
-          <span className="chip" key={keyword.id}>
+        {/* The full dictionary runs past seventy words and swallowed the
+            dashboard; it belongs in its own tab, where expanded is true. */}
+        {(expanded ? keywords : keywords.slice(0, 24)).map((keyword) => (
+          <span className={`chip ${keyword.type}`} key={keyword.id}>
             {keyword.value} · {keywordLabel(keyword.type)}
           </span>
         ))}
+        {!expanded && keywords.length > 24 && (
+          <span className="chip muted">و {keywords.length - 24} كلمة أخرى</span>
+        )}
       </div>
     </Panel>
   );
@@ -870,7 +927,7 @@ function CommentsPanel({
   }
 
   return (
-    <Panel title="قوالب التعليق" subtitle="النظام يقترح منها ولا ينشر تلقائيا في هذه المرحلة.">
+    <Panel title="قوالب التعليق" icon={MessageSquare} subtitle="النظام يقترح منها ولا ينشر تلقائيا في هذه المرحلة.">
       {expanded && (
         <div style={{ marginBottom: 16 }}>
           <div className="field">
@@ -922,7 +979,7 @@ function ParserPanel({
   setSampleText: (value: string) => void;
 }) {
   return (
-    <Panel title="اختبار استخراج البيانات" subtitle="الصق نص منشور لترى ماذا سيستخرج النظام.">
+    <Panel title="اختبار استخراج البيانات" icon={Sparkles} subtitle="الصق نص منشور لترى ماذا سيستخرج النظام.">
       <div className="field">
         <label>نص المنشور</label>
         <textarea value={sampleText} onChange={(event) => setSampleText(event.target.value)} />
@@ -940,10 +997,10 @@ function ParserPanel({
 
 function NextStepPanel() {
   return (
-    <Panel title="خطوة التشغيل القادمة" subtitle="ماذا يحدث بعد ربط Supabase والـ Worker؟">
+    <Panel title="كيف تعمل الدورة" icon={ClipboardCheck} subtitle="ما يحدث في كل تشغيل، بلا تدخل منك.">
       <div className="commentBox">
-        <ClipboardCheck size={18} /> كل 6 ساعات: فحص المصادر، فلترة المنشورات، استخراج البيانات، تجهيز التعليق، ثم
-        عرضها للموافقة اليدوية.
+        <ClipboardCheck size={18} /> Apify يمر على المجموعات ← الويب هوك يستقبل النتائج ← تُستبعد المنشورات
+        بلا نص وغير العقارية ← تُستخرج الأرقام والأسعار ← تُدمج نسخ الإعلان المكرر ← تظهر في «نتائج الرصد».
       </div>
     </Panel>
   );
@@ -1096,6 +1153,7 @@ function TasksPanel({
 
   return (
     <Panel
+      icon={Users}
       title="حسابات الجمع"
       subtitle="كل حساب هو Task في Apify بكوكيز فيسبوك خاصة به."
     >
@@ -1337,7 +1395,7 @@ function SchedulePanel({ connected }: { connected: boolean }) {
   }
 
   return (
-    <Panel title="وقت البحث" subtitle="كل كم ساعة يمر Apify على المجموعات المتابَعة.">
+    <Panel title="وقت البحث" icon={Clock} subtitle="كل كم ساعة يمر Apify على المجموعات المتابَعة.">
       {!connected && <div className="notice">لا يمكن الحفظ قبل ربط Supabase.</div>}
       {apifyProblem && <div className="notice">{apifyProblem} أضفه في متغيرات البيئة ثم أعد التشغيل.</div>}
 
@@ -1442,10 +1500,14 @@ function SchedulePanel({ connected }: { connected: boolean }) {
 function Panel({
   title,
   subtitle,
+  icon: Icon = FileSearch,
   children
 }: {
   title: string;
   subtitle: string;
+  // Every panel used to carry the same magnifier, which told you nothing about
+  // which panel you were looking at.
+  icon?: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
@@ -1455,7 +1517,9 @@ function Panel({
           <h3>{title}</h3>
           <p>{subtitle}</p>
         </div>
-        <FileSearch size={20} />
+        <span className="panelIcon">
+          <Icon size={18} />
+        </span>
       </div>
       <div className="panelBody">{children}</div>
     </section>

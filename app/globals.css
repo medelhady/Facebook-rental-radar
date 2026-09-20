@@ -617,3 +617,161 @@ th {
   align-items: center;
   gap: 10px;
 }
+
+/* ---- Motion and depth -------------------------------------------------
+   Everything here is decoration, so all of it is disabled under
+   prefers-reduced-motion at the end of this file. */
+
+.stat,
+.panel,
+.button,
+.navItem,
+.chip,
+.statusPill {
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease,
+    border-color 160ms ease;
+}
+
+.stat:hover,
+.panel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px rgba(30, 41, 59, 0.12);
+}
+
+.button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
+}
+
+.navItem:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+tbody tr {
+  transition: background 140ms ease;
+}
+
+tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* ---- Stat cards ---- */
+
+.stat {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* A coloured rail rather than a coloured card: the number stays the loudest
+   thing on the row. */
+.stat::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent, var(--blue));
+}
+
+.statIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex: none;
+  background: color-mix(in srgb, var(--accent, var(--blue)) 12%, #fff);
+  color: var(--accent, var(--blue));
+}
+
+.stat strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+
+/* ---- Keyword chips, coloured by what they do ---- */
+
+.chip.rent {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.chip.sale {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.chip.exclude {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.chip.location {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #a16207;
+}
+
+.chip:hover {
+  transform: translateY(-1px);
+}
+
+/* ---- Panels arrive rather than appear ---- */
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.panel {
+  animation: riseIn 260ms ease both;
+}
+
+.panelIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex: none;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat,
+  .panel,
+  .button,
+  .navItem,
+  .chip,
+  .statusPill,
+  tbody tr {
+    transition: none;
+  }
+
+  .stat:hover,
+  .panel:hover,
+  .button:hover:not(:disabled),
+  .chip:hover {
+    transform: none;
+  }
+
+  .panel {
+    animation: none;
+  }
+}
