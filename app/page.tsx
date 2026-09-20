@@ -29,7 +29,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { commentTemplates, groups, keywords, leads } from "@/lib/demo-data";
+import { commentTemplates, groups, keywords, leadFolders, leads } from "@/lib/demo-data";
 import type { CookieStatus, RunSummary } from "@/lib/apify";
 import type {
   ApifyTask,
@@ -79,7 +79,7 @@ type RadarData = {
 const demoData: RadarData = {
   source: "demo",
   apifyTasks: [],
-  folders: [],
+  folders: leadFolders,
   groups,
   keywords,
   commentTemplates,
@@ -329,7 +329,15 @@ export default function Home() {
             templates={data.commentTemplates}
           />
         )}
-        {activeView === "leads" && <LeadsPanel connected={connected} folders={data.folders} leads={data.leads} onSaved={refresh} />}
+        {activeView === "leads" && (
+          <LeadsPanel
+            connected={connected}
+            expanded
+            folders={data.folders}
+            leads={data.leads}
+            onSaved={refresh}
+          />
+        )}
         {activeView === "comments" && (
           <CommentsPanel connected={connected} expanded onSaved={refresh} templates={data.commentTemplates} />
         )}
@@ -800,13 +808,17 @@ function LeadsPanel({
   leads,
   folders = [],
   connected = false,
+  expanded = false,
   onSaved
 }: {
   leads: Lead[];
   folders?: LeadFolder[];
   connected?: boolean;
+  expanded?: boolean;
   onSaved?: () => Promise<void>;
 }) {
+  // null means "everything"; a folder id narrows the table to that box.
+  const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [filingId, setFilingId] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState("");
 
@@ -905,17 +917,58 @@ function LeadsPanel({
     }
   }
 
+  const shown = openFolder ? leads.filter((lead) => lead.folderIds.includes(openFolder)) : leads;
+  const openName = folders.find((folder) => folder.id === openFolder)?.name;
+
   return (
     <Panel
       icon={FileSearch}
       title="نتائج الرصد"
       subtitle={
-        leads.length > 0
+        openName
+          ? `ملف «${openName}» · ${shown.length} إعلاناً.`
+          : leads.length > 0
           ? `${leads.length} إعلاناً، الأحدث أولاً.`
           : "لم يُسجَّل أي إعلان بعد."
       }
     >
       {message && <div className="notice">{message}</div>}
+
+      {expanded && folders.length > 0 && (
+        <div className="folderBoxes">
+          <button
+            className={`folderBox ${openFolder === null ? "open" : ""}`}
+            onClick={() => setOpenFolder(null)}
+            type="button"
+          >
+            <span className="folderBoxIcon">
+              <FileSearch size={18} />
+            </span>
+            <span>
+              <span className="muted">كل الإعلانات</span>
+              <strong>{leads.length}</strong>
+            </span>
+          </button>
+
+          {folders.map((folder) => (
+            <button
+              className={`folderBox ${openFolder === folder.id ? "open" : ""}`}
+              key={folder.id}
+              onClick={() => setOpenFolder(openFolder === folder.id ? null : folder.id)}
+              type="button"
+            >
+              <span className="folderBoxIcon">
+                <Folder size={18} />
+              </span>
+              <span>
+                <span className="muted">{folder.name}</span>
+                <strong>{folder.count}</strong>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="tableWrap">
         <table>
           <thead>
@@ -931,7 +984,7 @@ function LeadsPanel({
             </tr>
           </thead>
           <tbody>
-            {leads.map((lead, index) => {
+            {shown.map((lead, index) => {
               const editing = editingId === lead.id;
               const busy = busyId === lead.id;
 
@@ -1094,10 +1147,12 @@ function LeadsPanel({
                 </tr>
               );
             })}
-            {leads.length === 0 && (
+            {shown.length === 0 && (
               <tr>
                 <td className="muted" colSpan={8}>
-                  لا توجد نتائج بعد. لم يسجل أي تشغيل إعلاناً حتى الآن.
+                  {openName
+                    ? `ملف «${openName}» فارغ. اضغط أيقونة الملف على أي إعلان لإضافته.`
+                    : "لا توجد نتائج بعد. لم يسجل أي تشغيل إعلاناً حتى الآن."}
                 </td>
               </tr>
             )}

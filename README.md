@@ -87,6 +87,10 @@ An ad can sit in several folders, because the same listing is often both "متا
 اليوم" and "عميل جاهز" and a single column would force a choice that loses one.
 Deleting a folder un-files its ads; it does not delete them.
 
+The folders also sit as boxes above the results table, with their counts. Clicking
+one narrows the table to that folder and clicking it again widens it back, so
+filing and reading happen on the same screen instead of two.
+
 Run `supabase/lead-folders.sql`. Until then the tab shows its empty state rather
 than an error — the query is optional, like the accounts table before it.
 

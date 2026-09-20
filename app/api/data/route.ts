@@ -3,6 +3,7 @@ import {
   commentTemplates as demoTemplates,
   groups as demoGroups,
   keywords as demoKeywords,
+  leadFolders as demoFolders,
   leads as demoLeads
 } from "@/lib/demo-data";
 import {
@@ -50,7 +51,9 @@ async function loadDashboardData() {
       commentTemplates: demoTemplates,
       leads: demoLeads,
       apifyTasks: [],
-      folders: []
+      // The demo leads are already filed into these, so returning an empty
+      // list here left the folder boxes invisible in demo mode.
+      folders: demoFolders
     });
   }
 

@@ -1,4 +1,4 @@
-import { CommentTemplate, FacebookGroup, Keyword, Lead } from "./types";
+import { CommentTemplate, FacebookGroup, Keyword, Lead, LeadFolder } from "./types";
 
 export const groups: FacebookGroup[] = [
   {
@@ -77,7 +77,7 @@ export const leads: Lead[] = [
     location: "النرجس",
     confidence: 100,
     offerType: "rent",
-    folderIds: [],
+    folderIds: ["f1"],
     status: "comment_ready",
     suggestedComment: commentTemplates[0].body,
     publishedAt: "2026-09-16T05:10:00Z",
@@ -94,7 +94,7 @@ export const leads: Lead[] = [
     location: "السلامة",
     confidence: 45,
     offerType: "rent",
-    folderIds: [],
+    folderIds: ["f2"],
     status: "new",
     suggestedComment: commentTemplates[1].body,
     publishedAt: "2026-09-16T04:30:00Z",
@@ -121,4 +121,9 @@ export const leads: Lead[] = [
     firstSeenAt: "2026-09-16T06:04:00Z",
     duplicateHash: "m7q2x"
   }
+];
+
+export const leadFolders: LeadFolder[] = [
+  { id: "f1", name: "متابعة اليوم", count: 1 },
+  { id: "f2", name: "عميل جاهز", count: 1 }
 ];
