@@ -548,3 +548,21 @@ th {
 .rowActions button.danger:hover:not(:disabled) {
   background: #fef2f2;
 }
+
+/* The radar going quiet is not a normal notice: it means no leads are
+   arriving, and it must be visible without going to look for it. */
+.notice.danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.linkButton {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

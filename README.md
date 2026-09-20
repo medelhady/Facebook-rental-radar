@@ -85,6 +85,11 @@ It also names the failure that looks like success: a run that Apify marks SUCCEE
 finishes in under twenty seconds, and returns three posts or fewer is an invalidated
 Facebook session, not a quiet day. Apify reports success because nothing crashed.
 
+A red banner sits above every screen while an account is in trouble, so the radar
+going quiet is something you are told rather than something you discover. It covers
+both silences: a run that returns almost nothing, and runs that stopped happening
+(nothing for over 26 hours, when the longest interval offered is 24).
+
 ### Cookies
 
 Each account's cookies can be replaced from the accounts panel: paste the extension's

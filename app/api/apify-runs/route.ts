@@ -56,7 +56,45 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ tasks: results });
+  // Both ways the radar goes quiet: runs that return nothing, and runs that
+  // stop happening. The first is a dead Facebook session, the second is the
+  // schedule or the Apify credit, and neither announces itself.
+  const alerts: Array<{ label: string; message: string }> = [];
+  const now = Date.now();
+
+  for (const task of results) {
+    if (task.error) {
+      alerts.push({ label: task.label, message: task.error });
+      continue;
+    }
+
+    const last = task.runs[0];
+    if (!last) {
+      alerts.push({ label: task.label, message: "لم يُسجَّل أي تشغيل بعد." });
+      continue;
+    }
+
+    if (last.looksEmpty) {
+      alerts.push({
+        label: task.label,
+        message: `آخر تشغيل رجع ${last.itemCount ?? 0} منشوراً فقط — الجلسة مُبطلة غالباً. جدّد الكوكيز.`
+      });
+      continue;
+    }
+
+    // The longest interval the dashboard offers is 24 hours, so a gap past
+    // that is a stopped schedule rather than a slow one.
+    const startedAt = last.startedAt ? new Date(last.startedAt).getTime() : 0;
+    const hours = startedAt ? Math.floor((now - startedAt) / 3_600_000) : null;
+    if (hours !== null && hours > 26) {
+      alerts.push({
+        label: task.label,
+        message: `لم يشتغل منذ ${hours} ساعة — راجع الجدولة في Apify ورصيد الحساب.`
+      });
+    }
+  }
+
+  return NextResponse.json({ tasks: results, alerts });
 }
 
 export async function POST(request: Request) {

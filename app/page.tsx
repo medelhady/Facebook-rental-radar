@@ -97,6 +97,7 @@ export default function Home() {
   const [activeView, setActiveView] = useState<View>("dashboard");
   const [data, setData] = useState<RadarData>(demoData);
   const [loadError, setLoadError] = useState("");
+  const [alerts, setAlerts] = useState<Array<{ label: string; message: string }>>([]);
   const [sampleText, setSampleText] = useState(
     "شقة للايجار حي النرجس 3 غرف وصالة السعر 4200 شهري للتواصل 0551112233"
   );
@@ -110,6 +111,16 @@ export default function Home() {
       }
       setData(payload as RadarData);
       setLoadError("");
+
+      // Asked for separately because it talks to Apify, and a slow or failing
+      // Apify must not hold up the leads.
+      try {
+        const runs = await fetch("/api/apify-runs", { cache: "no-store" });
+        const runsPayload = await runs.json();
+        setAlerts(runs.ok ? runsPayload.alerts ?? [] : []);
+      } catch {
+        setAlerts([]);
+      }
     } catch (error) {
       setData(demoData);
       setLoadError(error instanceof Error ? error.message : "تعذر الاتصال بقاعدة البيانات.");
@@ -204,6 +215,19 @@ export default function Home() {
             إضافة مجموعة
           </button>
         </section>
+
+        {alerts.map((alert) => (
+          <div className="notice danger" key={`${alert.label}-${alert.message}`}>
+            <strong>{alert.label}:</strong> {alert.message}{" "}
+            <button
+              className="linkButton"
+              onClick={() => setActiveView("schedule")}
+              type="button"
+            >
+              افتح «وقت البحث»
+            </button>
+          </div>
+        ))}
 
         {!connected && (
           <div className="notice">
