@@ -76,6 +76,15 @@ All tasks must sit under the one Apify account in `APIFY_TOKEN`. Tokens stay in 
 environment and are deliberately not stored in Supabase, because the API routes
 have no login yet and anyone with the URL could read them back.
 
+### Runs
+
+The accounts panel shows each account's last run — when it started, how long it took,
+and how many posts came back — and starts one on demand.
+
+It also names the failure that looks like success: a run that Apify marks SUCCEEDED,
+finishes in under twenty seconds, and returns three posts or fewer is an invalidated
+Facebook session, not a quiet day. Apify reports success because nothing crashed.
+
 ### Cookies
 
 Each account's cookies can be replaced from the accounts panel: paste the extension's

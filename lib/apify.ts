@@ -325,6 +325,78 @@ export async function removeTaskFromSchedule(taskId: string) {
   return { removed: true };
 }
 
+export type RunSummary = {
+  id: string;
+  status: string;
+  startedAt: string | null;
+  seconds: number | null;
+  itemCount: number | null;
+  // A run that succeeds in seconds with almost nothing is an invalidated
+  // Facebook session. Apify reports it as a success because nothing crashed,
+  // which is why it costs hours to find by hand.
+  looksEmpty: boolean;
+};
+
+const EMPTY_RUN_SECONDS = 20;
+const EMPTY_RUN_ITEMS = 3;
+
+async function datasetItemCount(datasetId: string | undefined) {
+  if (!datasetId) return null;
+  try {
+    const data = (await call(`/datasets/${encodeURIComponent(datasetId)}`)) as {
+      data?: { itemCount?: number };
+    } | null;
+    return data?.data?.itemCount ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getRecentRuns(taskId: string, limit = 5): Promise<RunSummary[]> {
+  const data = (await call(
+    `/actor-tasks/${normalizeTaskId(taskId)}/runs?desc=1&limit=${limit}`
+  )) as { data?: { items?: Array<Record<string, any>> } } | null;
+
+  const items = data?.data?.items ?? [];
+
+  return Promise.all(
+    items.map(async (item, index) => {
+      const startedAt = item.startedAt ?? null;
+      const finishedAt = item.finishedAt ?? null;
+      const seconds =
+        startedAt && finishedAt
+          ? Math.round((new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 1000)
+          : null;
+
+      // Only the newest run pays for the extra lookup; the rest are context.
+      const itemCount = index === 0 ? await datasetItemCount(item.defaultDatasetId) : null;
+      const status = String(item.status ?? "");
+
+      return {
+        id: String(item.id ?? ""),
+        status,
+        startedAt,
+        seconds,
+        itemCount,
+        looksEmpty:
+          status === "SUCCEEDED" &&
+          seconds !== null &&
+          seconds < EMPTY_RUN_SECONDS &&
+          itemCount !== null &&
+          itemCount <= EMPTY_RUN_ITEMS
+      };
+    })
+  );
+}
+
+export async function runTaskNow(taskId: string) {
+  const data = (await call(`/actor-tasks/${normalizeTaskId(taskId)}/runs`, { method: "POST" })) as {
+    data?: { id?: string; status?: string };
+  } | null;
+
+  return { id: data?.data?.id ?? "", status: data?.data?.status ?? "" };
+}
+
 export type ScheduleSummary = {
   id: string;
   name: string;

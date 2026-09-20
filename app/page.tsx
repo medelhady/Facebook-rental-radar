@@ -7,6 +7,7 @@ import {
   Database,
   KeyRound,
   LogOut,
+  Play,
   Users,
   ExternalLink,
   FileSearch,
@@ -25,7 +26,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { commentTemplates, groups, keywords, leads } from "@/lib/demo-data";
-import type { CookieStatus } from "@/lib/apify";
+import type { CookieStatus, RunSummary } from "@/lib/apify";
 import type {
   ApifyTask,
   CommentTemplate,
@@ -900,6 +901,45 @@ function TasksPanel({
   const [cookieFor, setCookieFor] = useState<ApifyTask | null>(null);
   const [cookieText, setCookieText] = useState("");
   const [cookieStatus, setCookieStatus] = useState<CookieStatus | null>(null);
+  const [runs, setRuns] = useState<
+    Record<string, { runs: RunSummary[]; error?: string }>
+  >({});
+
+  const loadRuns = useCallback(async () => {
+    try {
+      const response = await fetch("/api/apify-runs", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) return;
+      const next: Record<string, { runs: RunSummary[]; error?: string }> = {};
+      for (const task of payload.tasks ?? []) next[task.id] = { runs: task.runs, error: task.error };
+      setRuns(next);
+    } catch {
+      /* the table simply shows a dash */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRuns();
+  }, [loadRuns]);
+
+  async function runNow(task: ApifyTask) {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/apify-runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskRowId: task.id })
+      });
+      const payload = await response.json();
+      setMessage(response.ok ? payload.message : payload?.error ?? "تعذر بدء التشغيل.");
+      if (response.ok) await loadRuns();
+    } catch {
+      setMessage("تعذر الاتصال بالخادم.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function openCookies(task: ApifyTask) {
     setCookieFor(task);
@@ -1027,6 +1067,7 @@ function TasksPanel({
               <th>الحساب</th>
               <th>Task</th>
               <th>آخر مزامنة</th>
+              <th>آخر تشغيل</th>
               <th>الحالة</th>
               <th></th>
             </tr>
@@ -1044,6 +1085,7 @@ function TasksPanel({
                 <td className="muted">
                   {task.lastSyncedAt ? dateFormatter.format(new Date(task.lastSyncedAt)) : "-"}
                 </td>
+                <td className="muted">{describeRun(runs[task.id])}</td>
                 <td>
                   <span className={task.isActive ? "badge green" : "badge"}>
                     {task.isActive ? "مفعل" : "موقوف"}
@@ -1064,6 +1106,14 @@ function TasksPanel({
                       type="button"
                     >
                       {task.isActive ? <X size={16} /> : <Check size={16} />}
+                    </button>
+                    <button
+                      disabled={busy || !connected}
+                      onClick={() => runNow(task)}
+                      title="شغّل الآن"
+                      type="button"
+                    >
+                      <Play size={16} />
                     </button>
                     <button
                       disabled={busy}
@@ -1088,7 +1138,7 @@ function TasksPanel({
             ))}
             {apifyTasks.length === 0 && (
               <tr>
-                <td className="muted" colSpan={5}>
+                <td className="muted" colSpan={6}>
                   لا يوجد أي حساب بعد. نفّذ supabase/apify-tasks.sql ثم أضف الحساب الأول.
                 </td>
               </tr>
@@ -1346,6 +1396,24 @@ function Panel({
       <div className="panelBody">{children}</div>
     </section>
   );
+}
+
+// Reads a run the way you would want it read to you: when, how long, what
+// came back, and whether that combination means the session is dead.
+function describeRun(entry?: { runs: RunSummary[]; error?: string }) {
+  if (entry?.error) return entry.error;
+
+  const run = entry?.runs?.[0];
+  if (!run) return "-";
+
+  const parts: string[] = [];
+  if (run.startedAt) parts.push(dateFormatter.format(new Date(run.startedAt)));
+  if (run.seconds !== null) parts.push(`${run.seconds} ث`);
+  if (run.itemCount !== null) parts.push(`${run.itemCount} منشور`);
+  if (run.status !== "SUCCEEDED") parts.push(run.status);
+
+  const line = parts.join(" · ");
+  return run.looksEmpty ? `⚠ ${line} — جلسة مُبطلة غالباً` : line;
 }
 
 // The date the ad was posted, not the date we happened to scrape it.
