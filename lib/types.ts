@@ -3,6 +3,12 @@ export type LeadStatus = "new" | "comment_ready" | "contacted" | "duplicate" | "
 export type KeywordType = "include" | "exclude" | "location" | "rent" | "sale";
 export type OfferType = "rent" | "sale" | "unknown";
 
+export type LeadFolder = {
+  id: string;
+  name: string;
+  count: number;
+};
+
 export type ApifyTask = {
   id: string;
   label: string;
@@ -56,4 +62,5 @@ export type Lead = {
   publishedAt?: string;
   firstSeenAt: string;
   duplicateHash: string;
+  folderIds: string[];
 };

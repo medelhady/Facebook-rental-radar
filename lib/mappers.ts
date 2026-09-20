@@ -96,7 +96,7 @@ export function mapTemplate(row: TemplateRow): CommentTemplate {
   return { id: row.id, title: row.title, body: row.body, active: row.active };
 }
 
-export function mapLead(row: LeadRow, groupName: string): Lead {
+export function mapLead(row: LeadRow, groupName: string, folderIds: string[] = []): Lead {
   return {
     id: row.id,
     groupId: row.group_id ?? "",
@@ -115,6 +115,7 @@ export function mapLead(row: LeadRow, groupName: string): Lead {
     suggestedComment: row.suggested_comment ?? "",
     publishedAt: row.published_at ?? undefined,
     firstSeenAt: row.first_seen_at,
-    duplicateHash: row.duplicate_hash
+    duplicateHash: row.duplicate_hash,
+    folderIds
   };
 }

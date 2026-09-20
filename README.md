@@ -24,7 +24,7 @@ Open `http://localhost:3000`.
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in the SQL editor, then `supabase/apify-collection.sql`
    (as two separate queries — see the note at the top of that file), then
-   `supabase/apify-tasks.sql`.
+   `supabase/apify-tasks.sql`, then `supabase/lead-folders.sql`.
 3. Copy `.env.example` to `.env.local`.
 4. Fill `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
 5. Restart the dev server.
@@ -75,6 +75,20 @@ it that the dashboard did not put there is left alone.
 All tasks must sit under the one Apify account in `APIFY_TOKEN`. Tokens stay in the
 environment and are deliberately not stored in Supabase, because the API routes
 have no login yet and anyone with the URL could read them back.
+
+### Folders
+
+The results table is a stream; folders are what you keep. The folder button on any
+row files that ad into a named list, and the same button creates the list when it
+does not exist yet — typing a name files the ad in one step rather than making you
+go elsewhere first.
+
+An ad can sit in several folders, because the same listing is often both "متابعة
+اليوم" and "عميل جاهز" and a single column would force a choice that loses one.
+Deleting a folder un-files its ads; it does not delete them.
+
+Run `supabase/lead-folders.sql`. Until then the tab shows its empty state rather
+than an error — the query is optional, like the accounts table before it.
 
 ### Runs
 

@@ -775,3 +775,71 @@ tbody tr:hover {
     animation: none;
   }
 }
+
+/* ---- Filing ads into named folders ---- */
+
+.filePicker {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.filePicker input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: inherit;
+}
+
+.rowActions button.filed {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #a16207;
+}
+
+.chips button.chip {
+  cursor: pointer;
+  font: inherit;
+}
+
+.chips button.chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.folderTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.folderTab input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: inherit;
+  max-width: 180px;
+}
+
+.folderTab button:not(.chip) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.folderTab button.danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+}

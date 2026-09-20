@@ -5,6 +5,8 @@ import {
   ClipboardCheck,
   Clock,
   Database,
+  FolderPlus,
+  Folder,
   Hash,
   KeyRound,
   LogOut,
@@ -35,6 +37,7 @@ import type {
   FacebookGroup,
   Keyword,
   Lead,
+  LeadFolder,
   LeadStatus
 } from "@/lib/types";
 import { buildLeadDraft, type LeadFields } from "@/lib/lead-pipeline";
@@ -59,12 +62,14 @@ type View =
   | "capture"
   | "leads"
   | "comments"
+  | "folders"
   | "schedule"
   | "settings";
 
 type RadarData = {
   source: "demo" | "supabase";
   apifyTasks: ApifyTask[];
+  folders: LeadFolder[];
   groups: FacebookGroup[];
   keywords: Keyword[];
   commentTemplates: CommentTemplate[];
@@ -74,6 +79,7 @@ type RadarData = {
 const demoData: RadarData = {
   source: "demo",
   apifyTasks: [],
+  folders: [],
   groups,
   keywords,
   commentTemplates,
@@ -90,6 +96,7 @@ const navItems: Array<{
   { id: "keywords", label: "قاموس الكلمات", icon: Search },
   { id: "capture", label: "إضافة منشور", icon: Sparkles },
   { id: "leads", label: "نتائج الرصد", icon: FileSearch },
+  { id: "folders", label: "الملفات", icon: Folder },
   { id: "comments", label: "قوالب التعليق", icon: MessageSquare },
   { id: "schedule", label: "وقت البحث", icon: Clock },
   { id: "settings", label: "الإعدادات", icon: Settings }
@@ -292,7 +299,7 @@ export default function Home() {
           <section className="contentGrid">
             <div>
               <GroupsPanel apifyTasks={data.apifyTasks} connected={connected} groups={data.groups} onSaved={refresh} />
-              <LeadsPanel connected={connected} leads={data.leads} onSaved={refresh} />
+              <LeadsPanel connected={connected} folders={data.folders} leads={data.leads} onSaved={refresh} />
             </div>
             <div>
               <KeywordsPanel keywords={data.keywords} />
@@ -322,9 +329,17 @@ export default function Home() {
             templates={data.commentTemplates}
           />
         )}
-        {activeView === "leads" && <LeadsPanel connected={connected} leads={data.leads} onSaved={refresh} />}
+        {activeView === "leads" && <LeadsPanel connected={connected} folders={data.folders} leads={data.leads} onSaved={refresh} />}
         {activeView === "comments" && (
           <CommentsPanel connected={connected} expanded onSaved={refresh} templates={data.commentTemplates} />
+        )}
+        {activeView === "folders" && (
+          <FoldersPanel
+            connected={connected}
+            folders={data.folders}
+            leads={data.leads}
+            onSaved={refresh}
+          />
         )}
         {activeView === "schedule" && (
           <>
@@ -582,15 +597,257 @@ function GroupsPanel({
   );
 }
 
+function FoldersPanel({
+  connected,
+  folders,
+  leads,
+  onSaved
+}: {
+  connected: boolean;
+  folders: LeadFolder[];
+  leads: Lead[];
+  onSaved: () => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [openId, setOpenId] = useState<string | null>(folders[0]?.id ?? null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function send(url: string, init: RequestInit) {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(url, init);
+      const payload = await response.json();
+      setMessage(response.ok ? payload.message ?? "تم." : payload?.error ?? "تعذر تنفيذ الطلب.");
+      if (response.ok) await onSaved();
+      return response.ok;
+    } catch {
+      setMessage("تعذر الاتصال بالخادم.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function create() {
+    const ok = await send("/api/folders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    if (ok) setName("");
+  }
+
+  async function remove(folder: LeadFolder) {
+    const confirmed = window.confirm(
+      `حذف ملف «${folder.name}»؟\n\nالإعلانات نفسها تبقى في «نتائج الرصد» — يُحذف التصنيف فقط.`
+    );
+    if (!confirmed) return;
+    await send(`/api/folders?id=${encodeURIComponent(folder.id)}`, { method: "DELETE" });
+  }
+
+  const open = folders.find((folder) => folder.id === openId) ?? folders[0] ?? null;
+  const inFolder = open ? leads.filter((lead) => lead.folderIds.includes(open.id)) : [];
+
+  return (
+    <Panel
+      icon={Folder}
+      subtitle={
+        folders.length > 0
+          ? `${folders.length} ملفاً · اضغط ملفاً لعرض ما فيه.`
+          : "أنشئ ملفاً، ثم صنّف الإعلانات إليه من «نتائج الرصد»."
+      }
+      title="الملفات"
+    >
+      {message && <div className="notice">{message}</div>}
+
+      <div className="formGrid">
+        <div className="field">
+          <label>اسم الملف</label>
+          <input
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && name.trim()) void create();
+            }}
+            placeholder="مثال: للإيجار — متابعة اليوم"
+            value={name}
+          />
+        </div>
+        <button className="button" disabled={busy || !connected || !name.trim()} onClick={create} type="button">
+          <FolderPlus size={18} />
+          إنشاء ملف
+        </button>
+      </div>
+
+      {folders.length > 0 && (
+        <div className="chips" style={{ marginTop: 16 }}>
+          {folders.map((folder) => (
+            <span className="folderTab" key={folder.id}>
+              {renaming === folder.id ? (
+                <>
+                  <input
+                    autoFocus
+                    onChange={(event) => setDraftName(event.target.value)}
+                    value={draftName}
+                  />
+                  <button
+                    disabled={busy}
+                    onClick={async () => {
+                      const ok = await send("/api/folders", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ id: folder.id, name: draftName })
+                      });
+                      if (ok) setRenaming(null);
+                    }}
+                    title="حفظ"
+                    type="button"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button onClick={() => setRenaming(null)} title="إلغاء" type="button">
+                    <X size={14} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className={`chip ${open?.id === folder.id ? "sale" : ""}`}
+                    onClick={() => setOpenId(folder.id)}
+                    type="button"
+                  >
+                    {folder.name} · {folder.count}
+                  </button>
+                  <button
+                    disabled={busy || !connected}
+                    onClick={() => {
+                      setRenaming(folder.id);
+                      setDraftName(folder.name);
+                    }}
+                    title="تغيير الاسم"
+                    type="button"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    className="danger"
+                    disabled={busy || !connected}
+                    onClick={() => remove(folder)}
+                    title="حذف الملف"
+                    type="button"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div className="tableWrap" style={{ marginTop: 18 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>الحساب</th>
+                <th>الهاتف والمنشور</th>
+                <th>النص</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inFolder.map((lead, index) => (
+                <tr key={lead.id}>
+                  <td className="muted">{index + 1}</td>
+                  <td>
+                    <strong>{lead.authorName}</strong>
+                    <div className="muted">{lead.groupName}</div>
+                  </td>
+                  <td>
+                    {lead.phone ? (
+                      <strong>{lead.phone}</strong>
+                    ) : (
+                      <span className="muted">بدون رقم</span>
+                    )}
+                    <div className="muted">{leadDate(lead)}</div>
+                    <a href={lead.postUrl} rel="noreferrer" target="_blank">
+                      <ExternalLink size={14} /> المنشور
+                    </a>
+                  </td>
+                  <td className="leadText">{lead.postText}</td>
+                </tr>
+              ))}
+              {inFolder.length === 0 && (
+                <tr>
+                  <td className="muted" colSpan={4}>
+                    الملف فارغ. افتح «نتائج الرصد» واضغط أيقونة الملف على أي إعلان.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function LeadsPanel({
   leads,
+  folders = [],
   connected = false,
   onSaved
 }: {
   leads: Lead[];
+  folders?: LeadFolder[];
   connected?: boolean;
   onSaved?: () => Promise<void>;
 }) {
+  const [filingId, setFilingId] = useState<string | null>(null);
+  const [newFolder, setNewFolder] = useState("");
+
+  async function file(lead: Lead, payload: { folderId?: string; name?: string }) {
+    setBusyId(lead.id);
+    try {
+      const response = await fetch("/api/folders/assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: lead.id, ...payload })
+      });
+      const result = await response.json();
+      setMessage(response.ok ? result.message : result?.error ?? "تعذر الإضافة.");
+      if (response.ok) {
+        setNewFolder("");
+        setFilingId(null);
+        await onSaved?.();
+      }
+    } catch {
+      setMessage("تعذر الاتصال بالخادم.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function unfile(lead: Lead, folderId: string) {
+    setBusyId(lead.id);
+    try {
+      const response = await fetch(
+        `/api/folders/assign?leadId=${encodeURIComponent(lead.id)}&folderId=${encodeURIComponent(folderId)}`,
+        { method: "DELETE" }
+      );
+      const result = await response.json();
+      setMessage(response.ok ? result.message : result?.error ?? "تعذر الإزالة.");
+      if (response.ok) await onSaved?.();
+    } catch {
+      setMessage("تعذر الاتصال بالخادم.");
+    } finally {
+      setBusyId(null);
+    }
+  }
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftPhone, setDraftPhone] = useState("");
   const [draftStatus, setDraftStatus] = useState<LeadStatus>("new");
@@ -705,7 +962,65 @@ function LeadsPanel({
                       <ExternalLink size={14} /> المنشور
                     </a>
                   </td>
-                  <td className="leadText">{lead.postText}</td>
+                  <td className="leadText">
+                    {lead.postText}
+                    {lead.folderIds.length > 0 && (
+                      <div className="chips" style={{ marginTop: 8 }}>
+                        {lead.folderIds.map((folderId) => (
+                          <button
+                            className="chip location"
+                            disabled={busy}
+                            key={folderId}
+                            onClick={() => unfile(lead, folderId)}
+                            title="إزالة من الملف"
+                            type="button"
+                          >
+                            {folders.find((folder) => folder.id === folderId)?.name ?? "ملف"} ✕
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {filingId === lead.id && (
+                      <div className="filePicker">
+                        {folders.length > 0 && (
+                          <div className="chips" style={{ marginBottom: 8 }}>
+                            {folders.map((folder) => (
+                              <button
+                                className="chip"
+                                disabled={busy || lead.folderIds.includes(folder.id)}
+                                key={folder.id}
+                                onClick={() => file(lead, { folderId: folder.id })}
+                                type="button"
+                              >
+                                {folder.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <input
+                            onChange={(event) => setNewFolder(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" && newFolder.trim()) {
+                                void file(lead, { name: newFolder.trim() });
+                              }
+                            }}
+                            placeholder="ملف جديد باسم…"
+                            value={newFolder}
+                          />
+                          <button
+                            className="button"
+                            disabled={busy || !newFolder.trim()}
+                            onClick={() => file(lead, { name: newFolder.trim() })}
+                            type="button"
+                          >
+                            <FolderPlus size={16} />
+                            إنشاء
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <div className="progress">
                       <span style={{ width: `${lead.confidence}%` }} />
@@ -746,6 +1061,15 @@ function LeadsPanel({
                         </>
                       ) : (
                         <>
+                          <button
+                            className={lead.folderIds.length > 0 ? "filed" : ""}
+                            disabled={!connected || busy}
+                            onClick={() => setFilingId(filingId === lead.id ? null : lead.id)}
+                            title="إضافة إلى ملف"
+                            type="button"
+                          >
+                            <FolderPlus size={16} />
+                          </button>
                           <button
                             disabled={!connected || busy}
                             onClick={() => startEdit(lead)}
@@ -1590,6 +1914,7 @@ function viewSubtitle(view: View) {
     capture: "الصق منشوراً رأيته بنفسك وحوله إلى Lead محفوظ.",
     leads: "مراجعة المنشورات المطابقة والبيانات المستخرجة منها.",
     comments: "إدارة الرسائل الجاهزة التي ستستخدم للموافقة اليدوية قبل التعليق.",
+    folders: "الإعلانات التي صنّفتها بنفسك، مجمّعة في ملفات مسمّاة.",
     schedule: "تحديد كل كم ساعة يبحث Apify، ودفع قائمة المجموعات إليه.",
     settings: "اختبار الاستخراج وتجهيز إعدادات التشغيل القادمة."
   };

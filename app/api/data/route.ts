@@ -49,7 +49,8 @@ async function loadDashboardData() {
       keywords: demoKeywords,
       commentTemplates: demoTemplates,
       leads: demoLeads,
-      apifyTasks: []
+      apifyTasks: [],
+      folders: []
     });
   }
 
@@ -66,6 +67,21 @@ async function loadDashboardData() {
     .from("apify_tasks")
     .select("*")
     .order("created_at", { ascending: true });
+
+  // Also optional until supabase/lead-folders.sql has been run.
+  const [foldersRes, itemsRes] = await Promise.all([
+    supabase.from("lead_folders").select("*").order("created_at", { ascending: true }),
+    supabase.from("lead_folder_items").select("folder_id, lead_id")
+  ]);
+
+  const items = (itemsRes.data ?? []) as Array<{ folder_id: string; lead_id: string }>;
+
+  const foldersByLead = new Map<string, string[]>();
+  const countByFolder = new Map<string, number>();
+  for (const item of items) {
+    foldersByLead.set(item.lead_id, [...(foldersByLead.get(item.lead_id) ?? []), item.folder_id]);
+    countByFolder.set(item.folder_id, (countByFolder.get(item.folder_id) ?? 0) + 1);
+  }
 
   const failed = [groupsRes, keywordsRes, templatesRes, leadsRes].find((result) => result.error);
   if (failed?.error) {
@@ -87,7 +103,14 @@ async function loadDashboardData() {
     groups: groupRows.map((row) => mapGroup(row, newPerGroup.get(row.id) ?? 0)),
     keywords: ((keywordsRes.data ?? []) as KeywordRow[]).map(mapKeyword),
     commentTemplates: ((templatesRes.data ?? []) as TemplateRow[]).map(mapTemplate),
-    leads: leadRows.map((row) => mapLead(row, groupNames.get(row.group_id ?? "") ?? "غير محددة")),
-    apifyTasks: ((tasksRes.data ?? []) as ApifyTaskRow[]).map(mapApifyTask)
+    leads: leadRows.map((row) =>
+      mapLead(row, groupNames.get(row.group_id ?? "") ?? "غير محددة", foldersByLead.get(row.id) ?? [])
+    ),
+    apifyTasks: ((tasksRes.data ?? []) as ApifyTaskRow[]).map(mapApifyTask),
+    folders: ((foldersRes.data ?? []) as Array<{ id: string; name: string }>).map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      count: countByFolder.get(folder.id) ?? 0
+    }))
   });
 }
