@@ -94,7 +94,32 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ tasks: results, alerts });
+  // No red banner is ambiguous on its own: it reads the same whether every
+  // account is healthy or the check never ran. So health is stated positively
+  // and the dashboard can show green rather than show nothing.
+  const newest = results
+    .flatMap((task) => task.runs.slice(0, 1))
+    .filter((run) => run.startedAt)
+    .sort((a, b) => new Date(b.startedAt!).getTime() - new Date(a.startedAt!).getTime())[0];
+
+  const parts: string[] = [];
+  if (newest?.startedAt) {
+    const hours = Math.floor((now - new Date(newest.startedAt).getTime()) / 3_600_000);
+    parts.push(hours < 1 ? "آخر تشغيل قبل أقل من ساعة" : `آخر تشغيل قبل ${hours} ساعة`);
+  }
+  if (newest?.itemCount !== null && newest?.itemCount !== undefined) {
+    parts.push(`${newest.itemCount} منشور`);
+  }
+
+  return NextResponse.json({
+    tasks: results,
+    alerts,
+    health: {
+      ok: alerts.length === 0 && results.length > 0,
+      accounts: results.length,
+      summary: parts.join(" · ")
+    }
+  });
 }
 
 export async function POST(request: Request) {

@@ -566,3 +566,54 @@ th {
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* Always-on health indicator: silence is ambiguous, so the healthy state is
+   stated rather than implied by the absence of a warning. */
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.statusPill .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #9ca3af;
+  flex: none;
+}
+
+.statusPill.ok {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.statusPill.ok .dot {
+  background: #16a34a;
+}
+
+.statusPill.bad {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.statusPill.bad .dot {
+  background: #dc2626;
+}
+
+.topbarActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

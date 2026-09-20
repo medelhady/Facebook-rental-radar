@@ -98,6 +98,12 @@ export default function Home() {
   const [data, setData] = useState<RadarData>(demoData);
   const [loadError, setLoadError] = useState("");
   const [alerts, setAlerts] = useState<Array<{ label: string; message: string }>>([]);
+  // "unknown" is a real state, not a placeholder: a failed health check must
+  // not be shown as healthy just because no alert came back.
+  const [health, setHealth] = useState<{
+    state: "loading" | "ok" | "bad" | "unknown";
+    summary: string;
+  }>({ state: "loading", summary: "" });
   const [sampleText, setSampleText] = useState(
     "شقة للايجار حي النرجس 3 غرف وصالة السعر 4200 شهري للتواصل 0551112233"
   );
@@ -117,9 +123,24 @@ export default function Home() {
       try {
         const runs = await fetch("/api/apify-runs", { cache: "no-store" });
         const runsPayload = await runs.json();
-        setAlerts(runs.ok ? runsPayload.alerts ?? [] : []);
+
+        if (!runs.ok) {
+          setAlerts([]);
+          setHealth({ state: "unknown", summary: runsPayload?.error ?? "تعذر الفحص" });
+          return;
+        }
+
+        const nextAlerts = runsPayload.alerts ?? [];
+        setAlerts(nextAlerts);
+        setHealth({
+          state: runsPayload.health?.ok ? "ok" : "bad",
+          summary: runsPayload.health?.ok
+            ? runsPayload.health.summary || "يعمل"
+            : `${nextAlerts.length} تنبيه`
+        });
       } catch {
         setAlerts([]);
+        setHealth({ state: "unknown", summary: "تعذر الفحص" });
       }
     } catch (error) {
       setData(demoData);
@@ -210,10 +231,29 @@ export default function Home() {
             <h2>{pageTitle}</h2>
             <p>{viewSubtitle(activeView)}</p>
           </div>
-          <button className="button" onClick={() => setActiveView("groups")} type="button">
-            <Plus size={18} />
-            إضافة مجموعة
-          </button>
+          <div className="topbarActions">
+            <button
+              className={`statusPill ${
+                health.state === "ok" ? "ok" : health.state === "bad" ? "bad" : ""
+              }`}
+              onClick={() => setActiveView("schedule")}
+              title="حالة الجمع — اضغط لفتح «وقت البحث»"
+              type="button"
+            >
+              <span className="dot" />
+              {health.state === "loading"
+                ? "جاري الفحص…"
+                : health.state === "ok"
+                ? `الأداة تعمل · ${health.summary}`
+                : health.state === "bad"
+                ? `فيه مشكلة · ${health.summary}`
+                : `الحالة غير معروفة · ${health.summary}`}
+            </button>
+            <button className="button" onClick={() => setActiveView("groups")} type="button">
+              <Plus size={18} />
+              إضافة مجموعة
+            </button>
+          </div>
         </section>
 
         {alerts.map((alert) => (

@@ -85,6 +85,11 @@ It also names the failure that looks like success: a run that Apify marks SUCCEE
 finishes in under twenty seconds, and returns three posts or fewer is an invalidated
 Facebook session, not a quiet day. Apify reports success because nothing crashed.
 
+A pill in the header states the health outright — green with the last run and its
+post count, red with the alert count, grey when the check itself could not run.
+Green matters as much as red: an absent warning reads the same whether every
+account is fine or the check never happened, and only one of those is good news.
+
 A red banner sits above every screen while an account is in trouble, so the radar
 going quiet is something you are told rather than something you discover. It covers
 both silences: a run that returns almost nothing, and runs that stopped happening
