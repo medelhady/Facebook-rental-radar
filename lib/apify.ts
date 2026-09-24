@@ -217,7 +217,7 @@ export async function syncApifyCookies(taskId: string, text: string) {
 // Every actor names its cap differently, and the saved task only carries the
 // one its own actor uses. Guessing writes a key nobody reads: the call
 // succeeds, the cap never changes, and nothing says so.
-const LIMIT_KEYS = ["resultsLimit", "maxPosts", "maxItems", "maxResults", "postsLimit", "limit"];
+const LIMIT_KEYS = ["count", "resultsLimit", "maxPosts", "maxItems", "maxResults", "postsLimit", "limit"];
 
 export function findLimitKey(input: TaskInput) {
   for (const key of LIMIT_KEYS) {
@@ -469,4 +469,44 @@ export async function getRun(runId: string) {
     data?: { id?: string; status?: string; defaultDatasetId?: string };
   } | null;
   return data?.data ?? null;
+}
+
+const ACTOR_ID = "curious_coder~facebook-post-scraper";
+
+export type CreateTaskInput = {
+  label: string;
+  groupUrls?: string[];
+  cookies?: unknown[];
+};
+
+// Creates a brand-new Apify Task for one client, pre-filled with their
+// groups and cookies so it works the same way as a manually-created task.
+export async function createApifyTask({ label, groupUrls = [], cookies }: CreateTaskInput) {
+  const input: Record<string, unknown> = {
+    urls: groupUrls,
+    count: 60,
+    outputFormat: "raw",
+    sortType: "new_posts",
+    scrapePhotos: false,
+    minDelay: 1,
+    maxDelay: 10,
+    proxy: { useApifyProxy: true, apifyProxyGroups: [] }
+  };
+
+  if (cookies) input.cookie = cookies;
+
+  const data = (await call(`/actor-tasks`, {
+    method: "POST",
+    body: JSON.stringify({
+      actId: ACTOR_ID,
+      name: `${label}-facebook-post-scraper-task`,
+      input,
+      options: { memoryMbytes: 1024 }
+    })
+  })) as { data?: { id?: string } } | null;
+
+  const taskId = data?.data?.id;
+  if (!taskId) throw new Error("فشل إنشاء الـ Task — لم يرجع Apify معرّفاً.");
+
+  return normalizeTaskId(taskId);
 }
