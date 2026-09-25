@@ -9,7 +9,6 @@ export default function OfficeSignupPage() {
   const [officeName, setOfficeName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [groupUrlsText, setGroupUrlsText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,15 +40,10 @@ export default function OfficeSignupPage() {
       }
 
       // 2. إنشاء المكتب وربطه بالحساب + إنشاء Apify Task
-      const groupUrls = groupUrlsText
-        .split("\n")
-        .map((url) => url.trim())
-        .filter(Boolean);
-
       const res = await fetch("/api/offices/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ officeName, ownerEmail: email, groupUrls, authUserId })
+        body: JSON.stringify({ officeName, ownerEmail: email, groupUrls: [], authUserId })
       });
 
       const data = await res.json();
@@ -104,16 +98,6 @@ export default function OfficeSignupPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
-            style={{ width: "100%", padding: 8, marginTop: 4 }}
-          />
-        </label>
-
-        <label>
-          روابط مجموعات فيسبوك (رابط واحد بكل سطر)
-          <textarea
-            value={groupUrlsText}
-            onChange={(e) => setGroupUrlsText(e.target.value)}
-            rows={4}
             style={{ width: "100%", padding: 8, marginTop: 4 }}
           />
         </label>
