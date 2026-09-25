@@ -5,7 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-type Body = { officeName?: string; ownerEmail?: string; groupUrls?: string[] };
+type Body = { officeName?: string; ownerEmail?: string; groupUrls?: string[]; authUserId?: string };
 
 function noDatabase() {
   return NextResponse.json({ error: "قاعدة البيانات غير مربوطة." }, { status: 503 });
@@ -19,6 +19,7 @@ export async function POST(request: Request) {
   const officeName = body?.officeName?.trim() ?? "";
   const ownerEmail = body?.ownerEmail?.trim() ?? "";
   const groupUrls = body?.groupUrls ?? [];
+  const authUserId = body?.authUserId?.trim() || null;
 
   if (!officeName || !ownerEmail) {
     return NextResponse.json({ error: "اكتب اسم المكتب والبريد الإلكتروني." }, { status: 400 });
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
   // 1. تسجيل المكتب
   const { data: office, error: officeError } = await supabase
     .from("offices")
-    .insert({ name: officeName, owner_email: ownerEmail })
+    .insert({ name: officeName, owner_email: ownerEmail, auth_user_id: authUserId })
     .select("*")
     .single();
 
