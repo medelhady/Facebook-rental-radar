@@ -3,7 +3,7 @@ import { adminPassword, isValidSession, SESSION_COOKIE } from "@/lib/auth";
 
 // Apify calls this one and cannot log in. It carries its own secret in the
 // query string and verifies every run against the Apify API before trusting it.
-const PUBLIC_PATHS = ["/login", "/api/login", "/api/apify-webhook", "/api/health"];
+const PUBLIC_PATHS = ["/login", "/api/login", "/api/apify-webhook", "/api/health", "/api/offices/register"];
 
 export async function middleware(request: NextRequest) {
   const secret = adminPassword();
