@@ -481,6 +481,17 @@ export type CreateTaskInput = {
 
 // Creates a brand-new Apify Task for one client, pre-filled with their
 // groups and cookies so it works the same way as a manually-created task.
+// Apify task names allow only letters, digits, and hyphens (and never a
+// leading/trailing/doubled hyphen). A raw office name like "Test Office 2"
+// is rejected outright, so it is slugified before use.
+function slugifyTaskName(label: string) {
+  const slug = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "office";
+}
+
 export async function createApifyTask({ label, groupUrls = [], cookies }: CreateTaskInput) {
   const input: Record<string, unknown> = {
     urls: groupUrls,
@@ -499,7 +510,9 @@ export async function createApifyTask({ label, groupUrls = [], cookies }: Create
     method: "POST",
     body: JSON.stringify({
       actId: ACTOR_ID,
-      name: `${label}-facebook-post-scraper-task`,
+      // Arabic (or any non-Latin) label slugifies down to the same generic
+      // word for every office, so a short random suffix keeps names unique.
+      name: `${slugifyTaskName(label)}-${Math.random().toString(36).slice(2, 8)}-task`,
       input,
       options: { memoryMbytes: 1024 }
     })
