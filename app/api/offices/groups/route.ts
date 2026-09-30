@@ -66,9 +66,14 @@ export async function POST(request: Request) {
   // 3. حفظ نفس القائمة بجدول facebook_groups (نمسح القديم ونضيف الجديد، أبسط من مقارنة الفروقات)
   await supabase.from("facebook_groups").delete().eq("office_id", office.id);
 
-  const { error: insertError } = await supabase
-    .from("facebook_groups")
-    .insert(groupUrls.map((url) => ({ url, office_id: office.id, apify_task_id: task.id })));
+  const { error: insertError } = await supabase.from("facebook_groups").insert(
+    groupUrls.map((url, index) => ({
+      url,
+      name: `مجموعة ${index + 1}`,
+      office_id: office.id,
+      apify_task_id: task.id
+    }))
+  );
 
   if (insertError) {
     return NextResponse.json(
