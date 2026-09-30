@@ -70,15 +70,18 @@ export async function POST(request: Request) {
     );
   }
 
-  // 4. إضافته للجدولة عشان يشتغل تلقائيًا
+  // 4. إضافته للجدولة عشان يشتغل تلقائيًا — فقط إذا فيه مجموعة حقيقية،
+  // وإلا الـ Task يشتغل على الرابط المؤقت (placeholder) بلا فائدة.
   let warning: string | undefined;
-  try {
-    await addTaskToSchedule(taskId);
-  } catch (scheduleError) {
-    warning =
-      scheduleError instanceof Error
-        ? `المكتب والـ Task جاهزين لكن لم يُربطا بالجدولة: ${scheduleError.message}`
-        : "لم يُربط بالجدولة.";
+  if (groupUrls.length > 0) {
+    try {
+      await addTaskToSchedule(taskId);
+    } catch (scheduleError) {
+      warning =
+        scheduleError instanceof Error
+          ? `المكتب والـ Task جاهزين لكن لم يُربطا بالجدولة: ${scheduleError.message}`
+          : "لم يُربط بالجدولة.";
+    }
   }
 
   return NextResponse.json(
