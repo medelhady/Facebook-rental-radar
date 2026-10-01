@@ -26,6 +26,14 @@ type GroupData = {
   last_error: string | null;
 };
 
+type CookieStatus = {
+  key: string | null;
+  count: number;
+  hasSession: boolean;
+  expiresAt: string | null;
+  daysLeft: number | null;
+};
+
 export default function OfficeDashboardPage() {
   const router = useRouter();
   const [office, setOffice] = useState<OfficeData | null>(null);
@@ -36,6 +44,10 @@ export default function OfficeDashboardPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [groupsMessage, setGroupsMessage] = useState<string | null>(null);
+  const [cookieStatus, setCookieStatus] = useState<CookieStatus | null>(null);
+  const [cookiesText, setCookiesText] = useState("");
+  const [savingCookies, setSavingCookies] = useState(false);
+  const [cookiesMessage, setCookiesMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -80,11 +92,44 @@ export default function OfficeDashboardPage() {
         setGroupUrlsText((data.groups ?? []).map((g: GroupData) => g.url).join("\n"));
       }
 
+      const cookieRes = await fetch("/api/offices/cookies");
+      if (cookieRes.ok) {
+        const cookieData = await cookieRes.json();
+        setCookieStatus(cookieData.status ?? null);
+      }
+
       setLoading(false);
     }
 
     load();
   }, [router]);
+
+  async function handleSaveCookies(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingCookies(true);
+    setCookiesMessage(null);
+
+    try {
+      const res = await fetch("/api/offices/cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cookiesText })
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setCookiesMessage(data.error ?? "حدث خطأ غير متوقع.");
+      } else {
+        setCookiesMessage("تم تحديث الكوكيز بنجاح.");
+        setCookieStatus(data.status ?? null);
+        setCookiesText("");
+      }
+    } catch (err) {
+      setCookiesMessage(err instanceof Error ? err.message : "تعذر الاتصال بالسيرفر.");
+    } finally {
+      setSavingCookies(false);
+    }
+  }
 
   async function handleSaveGroups(e: React.FormEvent) {
     e.preventDefault();
@@ -168,6 +213,50 @@ export default function OfficeDashboardPage() {
         ) : (
           <p>لا يوجد نظام مرتبط بعد.</p>
         )}
+      </div>
+
+      <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <h2 style={{ fontSize: 18, marginBottom: 8 }}>حساب فيسبوك (الكوكيز)</h2>
+
+        {cookieStatus?.hasSession ? (
+          <p style={{ marginBottom: 12 }}>
+            <strong>الحالة:</strong>{" "}
+            {cookieStatus.daysLeft !== null && cookieStatus.daysLeft >= 0
+              ? `متصل — تنتهي خلال ${cookieStatus.daysLeft} يوم`
+              : "متصل، لكن يُنصح بالتجديد قريباً"}
+          </p>
+        ) : (
+          <p style={{ marginBottom: 12, color: "#b45309" }}>
+            لا يوجد حساب فيسبوك متصل بعد. الصق الكوكيز بالأسفل عشان يبدأ النظام يجمع لك.
+          </p>
+        )}
+
+        <p style={{ color: "#555", fontSize: 14, marginBottom: 12 }}>
+          افتح فيسبوك بمتصفحك (بحساب ثانوي، ليس حسابك الشخصي)، سجّل دخول، ثم استخدم إضافة
+          Cookie-Editor لتصدير الكوكيز والصقها هنا.
+        </p>
+
+        <form onSubmit={handleSaveCookies} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <textarea
+            value={cookiesText}
+            onChange={(e) => setCookiesText(e.target.value)}
+            rows={4}
+            placeholder='[{"name":"c_user","value":"..."}, ...]'
+            style={{ width: "100%", padding: 8, fontFamily: "monospace", fontSize: 12 }}
+          />
+
+          {cookiesMessage && (
+            <p style={{ color: cookiesMessage.includes("بنجاح") ? "green" : "red" }}>{cookiesMessage}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={savingCookies}
+            style={{ padding: 12, background: "#2563eb", color: "white", border: "none", borderRadius: 6 }}
+          >
+            {savingCookies ? "جاري الحفظ..." : "احفظ الكوكيز"}
+          </button>
+        </form>
       </div>
 
       <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 16 }}>
