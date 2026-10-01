@@ -60,6 +60,10 @@ export default function OfficeDashboardPage() {
   const [savingCookies, setSavingCookies] = useState(false);
   const [cookiesMessage, setCookiesMessage] = useState<string | null>(null);
   const [leads, setLeads] = useState<LeadData[]>([]);
+  const [resultsLimit, setResultsLimit] = useState<number>(60);
+  const [maxResultsLimit, setMaxResultsLimit] = useState<number>(1000);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -116,11 +120,69 @@ export default function OfficeDashboardPage() {
         setLeads(leadsData.leads ?? []);
       }
 
+      const settingsRes = await fetch("/api/offices/settings");
+      if (settingsRes.ok) {
+        const settingsData = await settingsRes.json();
+        if (typeof settingsData.resultsLimit === "number") setResultsLimit(settingsData.resultsLimit);
+        if (typeof settingsData.maxResultsLimit === "number") setMaxResultsLimit(settingsData.maxResultsLimit);
+        if (typeof settingsData.isActive === "boolean" && taskData) {
+          setTask({ ...taskData, is_active: settingsData.isActive });
+        }
+      }
+
       setLoading(false);
     }
 
     load();
   }, [router]);
+
+  async function handleToggleActive() {
+    if (!task) return;
+    setSavingSettings(true);
+    setSettingsMessage(null);
+
+    const nextActive = !task.is_active;
+    try {
+      const res = await fetch("/api/offices/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: nextActive })
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setSettingsMessage(data.error ?? "حدث خطأ غير متوقع.");
+      } else {
+        setTask({ ...task, is_active: nextActive });
+        setSettingsMessage(nextActive ? "تم تفعيل النظام." : "تم إيقاف النظام.");
+      }
+    } catch (err) {
+      setSettingsMessage(err instanceof Error ? err.message : "تعذر الاتصال بالسيرفر.");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  async function handleSaveResultsLimit(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingSettings(true);
+    setSettingsMessage(null);
+
+    try {
+      const res = await fetch("/api/offices/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resultsLimit })
+      });
+      const data = await res.json();
+
+      setSettingsMessage(!res.ok || data.error ? data.error ?? "حدث خطأ غير متوقع." : "تم تحديث عدد النتائج.");
+    } catch (err) {
+      setSettingsMessage(err instanceof Error ? err.message : "تعذر الاتصال بالسيرفر.");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
 
   async function handleSaveCookies(e: React.FormEvent) {
     e.preventDefault();
@@ -227,6 +289,47 @@ export default function OfficeDashboardPage() {
             <p><strong>الحالة:</strong> {task.is_active ? "مفعّل" : "متوقف"}</p>
             <p><strong>آخر مزامنة:</strong> {task.last_synced_at ?? "لم تتم بعد"}</p>
             {task.last_error && <p style={{ color: "red" }}><strong>آخر خطأ:</strong> {task.last_error}</p>}
+
+            <button
+              onClick={handleToggleActive}
+              disabled={savingSettings}
+              style={{
+                padding: "8px 16px",
+                marginTop: 8,
+                marginBottom: 12,
+                border: "1px solid #ccc",
+                borderRadius: 6,
+                background: task.is_active ? "#fef2f2" : "#f0fdf4",
+                color: task.is_active ? "#b91c1c" : "#15803d"
+              }}
+            >
+              {task.is_active ? "إيقاف النظام" : "تفعيل النظام"}
+            </button>
+
+            <form onSubmit={handleSaveResultsLimit} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <label style={{ fontSize: 14 }}>عدد النتائج لكل مجموعة (الحد الأقصى {maxResultsLimit}):</label>
+              <input
+                type="number"
+                min={1}
+                max={maxResultsLimit}
+                value={resultsLimit}
+                onChange={(e) => setResultsLimit(Number(e.target.value))}
+                style={{ width: 80, padding: 4 }}
+              />
+              <button
+                type="submit"
+                disabled={savingSettings}
+                style={{ padding: "6px 12px", border: "1px solid #ccc", borderRadius: 6 }}
+              >
+                حفظ
+              </button>
+            </form>
+
+            {settingsMessage && (
+              <p style={{ marginTop: 8, color: settingsMessage.includes("تم") ? "green" : "red" }}>
+                {settingsMessage}
+              </p>
+            )}
           </>
         ) : (
           <p>لا يوجد نظام مرتبط بعد.</p>
