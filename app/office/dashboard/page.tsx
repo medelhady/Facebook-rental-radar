@@ -26,6 +26,17 @@ type GroupData = {
   last_error: string | null;
 };
 
+type LeadData = {
+  id: string;
+  ad_text: string;
+  ad_date: string | null;
+  post_url: string | null;
+  extracted_area: string | null;
+  extracted_type: string | null;
+  contact_info: string | null;
+  created_at: string;
+};
+
 type CookieStatus = {
   key: string | null;
   count: number;
@@ -48,6 +59,7 @@ export default function OfficeDashboardPage() {
   const [cookiesText, setCookiesText] = useState("");
   const [savingCookies, setSavingCookies] = useState(false);
   const [cookiesMessage, setCookiesMessage] = useState<string | null>(null);
+  const [leads, setLeads] = useState<LeadData[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -96,6 +108,12 @@ export default function OfficeDashboardPage() {
       if (cookieRes.ok) {
         const cookieData = await cookieRes.json();
         setCookieStatus(cookieData.status ?? null);
+      }
+
+      const leadsRes = await fetch("/api/offices/leads");
+      if (leadsRes.ok) {
+        const leadsData = await leadsRes.json();
+        setLeads(leadsData.leads ?? []);
       }
 
       setLoading(false);
@@ -304,6 +322,34 @@ export default function OfficeDashboardPage() {
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+
+      <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 16, marginTop: 16 }}>
+        <h2 style={{ fontSize: 18, marginBottom: 8 }}>الطلبات المستخرجة ({leads.length})</h2>
+
+        {leads.length === 0 ? (
+          <p style={{ color: "#555" }}>
+            لا توجد نتائج بعد. بعد ما يشتغل النظام على مجموعاتك، تظهر الطلبات هنا تلقائياً.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {leads.map((lead) => (
+              <div key={lead.id} style={{ border: "1px solid #f0f0f0", borderRadius: 6, padding: 12, fontSize: 14 }}>
+                <p style={{ marginBottom: 6, whiteSpace: "pre-wrap" }}>{lead.ad_text}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, color: "#555", fontSize: 13 }}>
+                  {lead.extracted_type && <span><strong>النوع:</strong> {lead.extracted_type}</span>}
+                  {lead.extracted_area && <span><strong>المنطقة:</strong> {lead.extracted_area}</span>}
+                  {lead.contact_info && <span><strong>التواصل:</strong> {lead.contact_info}</span>}
+                </div>
+                {lead.post_url && (
+                  <a href={lead.post_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "#2563eb" }}>
+                    رابط المنشور الأصلي
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </main>
