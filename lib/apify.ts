@@ -466,7 +466,7 @@ export async function getDatasetItems(datasetId: string, max = 2000): Promise<Ap
 // from Apify is what proves it happened and yields the real dataset id.
 export async function getRun(runId: string) {
   const data = (await call(`/actor-runs/${encodeURIComponent(runId)}`)) as {
-    data?: { id?: string; status?: string; defaultDatasetId?: string };
+    data?: { id?: string; status?: string; defaultDatasetId?: string; actorTaskId?: string };
   } | null;
   return data?.data ?? null;
 }
@@ -530,5 +530,40 @@ export async function createApifyTask({ label, groupUrls = [], cookies }: Create
   const taskId = data?.data?.id;
   if (!taskId) throw new Error("فشل إنشاء الـ Task — لم يرجع Apify معرّفاً.");
 
-  return normalizeTaskId(taskId);
+  const normalizedId = normalizeTaskId(taskId);
+
+  // Without this, a new office's task runs on schedule but nothing ever
+  // ingests its results — the existing webhook only fires for whatever was
+  // wired up manually before offices existed.
+  try {
+    await registerTaskWebhook(normalizedId);
+  } catch {
+    // Task creation already succeeded; a missing webhook just means this
+    // office's runs won't be ingested until it's added manually later.
+  }
+
+  return normalizedId;
+}
+
+function siteBaseUrl() {
+  const explicit = clean(process.env.NEXT_PUBLIC_SITE_URL);
+  if (explicit) return explicit.startsWith("http") ? explicit : `https://${explicit}`;
+  const vercelUrl = clean(process.env.VERCEL_URL);
+  if (vercelUrl) return `https://${vercelUrl}`;
+  return "";
+}
+
+async function registerTaskWebhook(taskId: string) {
+  const base = siteBaseUrl();
+  const secret = clean(process.env.APIFY_WEBHOOK_SECRET);
+  if (!base || !secret) throw new Error("لا يمكن تسجيل Webhook: الرابط الأساسي أو السر غير متوفر.");
+
+  await call(`/webhooks`, {
+    method: "POST",
+    body: JSON.stringify({
+      eventTypes: ["ACTOR.RUN.SUCCEEDED"],
+      condition: { actorTaskId: taskId },
+      requestUrl: `${base}/api/apify-webhook?secret=${encodeURIComponent(secret)}`
+    })
+  });
 }
